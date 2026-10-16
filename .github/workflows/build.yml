@@ -50,15 +50,15 @@ jobs:
             python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
             upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
 
-      - name: 载入配置
-        run: |
-          cp configs/${{ github.event.inputs.config_file || 'm520.config' }} .config
-          make defconfig
-
       - name: 更新并安装 feeds
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
+      - name: 载入配置
+        run: |
+          cp configs/${{ github.event.inputs.config_file || 'm520.config' }} .config
+          make defconfig
 
       - name: 下载源码包
         run: |
