@@ -12,7 +12,7 @@
 /tmp
 /logs
 /feeds
-/feeds.conf
+#/feeds.conf  (已纳入版本控制,用于锁定 feed 版本)
 /files
 /target/linux/feeds
 /overlay
