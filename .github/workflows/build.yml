@@ -26,6 +26,11 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: 确认 rust CI-LLVM 缓存就位
+        run: |
+          echo "== rust 缓存文件 =="
+          ls -la dl/rustc/llvm-*/rust-dev-*.tar.xz || echo "WARNING: rust 缓存缺失"
+
       - name: 释放磁盘空间
         run: |
           df -h
