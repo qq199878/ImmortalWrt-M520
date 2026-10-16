@@ -1,0 +1,27 @@
+From: Codex <codex@example.invalid>
+Subject: ARM: dts: qcom: ipq8064: align TSENS qfprom cells
+
+The IPQ8064 qfprom provider exposes 4-byte words.  The TSENS calibration
+cells are currently described as 11 bytes, which makes the nvmem core warn
+while it internally rounds the raw read length up to 12 bytes anyway:
+
+  nvmem qfprom12: cell calib raw len 11 unaligned to nvmem word size 4
+  nvmem qfprom12: cell calib_backup raw len 11 unaligned to nvmem word size 4
+
+Describe both cells with the aligned raw length expected by qfprom.
+
+--- a/arch/arm/boot/dts/qcom/qcom-ipq8064.dtsi
++++ b/arch/arm/boot/dts/qcom/qcom-ipq8064.dtsi
+@@ -520,10 +520,10 @@
+ 				reg = <0xc0 0x4>;
+ 			};
+ 			tsens_calib: calib@400 {
+-				reg = <0x400 0xb>;
++				reg = <0x400 0xc>;
+ 			};
+ 			tsens_calib_backup: calib_backup@410 {
+-				reg = <0x410 0xb>;
++				reg = <0x410 0xc>;
+ 			};
+ 		};
+ 

@@ -96,6 +96,9 @@ nokia,ac400i)
 	ucidef_set_led_default "ctrl" "CTRL" "green:ctrl" "0"
 	ucidef_set_led_default "pwr" "PWR" "green:power" "1"
 	;;
+ruijie,rg-mtfi-m520)
+	ucidef_set_led_default "sys" "SYS" "green:sys" "1"
+	;;
 tplink,ad7200)
 	ucidef_set_led_usbport "usb1" "USB 1" "blue:usb1" "usb1-port1" "usb2-port1"
 	ucidef_set_led_usbport "usb2" "USB 2" "blue:usb3" "usb3-port1" "usb4-port1"

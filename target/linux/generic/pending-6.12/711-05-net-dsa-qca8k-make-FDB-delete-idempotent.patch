@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: lgg <lgg@ubuntu>
+Date: Wed, 3 Jun 2026 14:00:00 +0800
+Subject: [PATCH] net: dsa: qca8k: make FDB delete idempotent
+
+During bridge setup and master changes DSA can ask qca8k to delete an
+FDB entry that has already been removed from the hardware table. Treat
+this as success instead of returning -EINVAL, matching the expected
+idempotent semantics of deleting a non-existing FDB entry.
+
+This avoids spurious startup errors such as:
+
+  port 1 failed to delete xx:xx:xx:xx:xx:xx vid 1 from fdb: -22
+
+on multi-CPU-port qca8k devices while bridge ports are moving between
+standalone and bridged state.
+
+Signed-off-by: lgg <lgg@ubuntu>
+---
+ drivers/net/dsa/qca/qca8k-common.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+--- a/drivers/net/dsa/qca/qca8k-common.c
++++ b/drivers/net/dsa/qca/qca8k-common.c
+@@ -294,9 +294,9 @@ static int qca8k_fdb_search_and_del(stru
+ 	if (ret < 0)
+ 		goto exit;
+ 
+-	/* Rule doesn't exist. Why delete? */
++	/* Deleting a non-existing rule is harmless. */
+ 	if (!fdb.aging) {
+-		ret = -EINVAL;
++		ret = 0;
+ 		goto exit;
+ 	}
+ 

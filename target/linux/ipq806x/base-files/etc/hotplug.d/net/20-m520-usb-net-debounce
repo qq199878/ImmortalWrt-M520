@@ -1,0 +1,129 @@
+#!/bin/sh
+
+. /lib/functions.sh
+
+[ "$(board_name)" = "ruijie,rg-mtfi-m520" ] || exit 0
+
+enabled="$(uci -q get system.m520_usb_net_debounce.enabled)"
+[ "$enabled" = "1" ] || exit 0
+
+delay="$(uci -q get system.m520_usb_net_debounce.delay)"
+case "$delay" in
+	""|*[!0-9]*)
+		delay=10
+		;;
+esac
+[ "$delay" -gt 0 ] 2>/dev/null || delay=10
+
+iface="$DEVICENAME"
+[ -n "$iface" ] || exit 0
+
+state_dir="/var/run/m520-usb-net-debounce"
+state_file="$state_dir/$iface"
+ifup_marker="$state_dir/$iface.ifup"
+
+if [ -f "$ifup_marker" ]; then
+	exit 0
+fi
+
+netdev_device_path() {
+	[ -e "/sys/class/net/$1/device" ] || return 1
+	readlink -f "/sys/class/net/$1/device" 2>/dev/null
+}
+
+is_usb_netdev() {
+	local device_path subsystem
+
+	device_path="$(netdev_device_path "$1")" || return 1
+	[ -n "$device_path" ] || return 1
+
+	subsystem="$(readlink -f "$device_path/subsystem" 2>/dev/null)"
+	[ "$subsystem" = "/sys/bus/usb" ] && return 0
+
+	case "$device_path" in
+		*/usb[0-9]*|*/usb[0-9]*/*)
+			return 0
+			;;
+	esac
+
+	return 1
+}
+
+find_network_interfaces() {
+	local netdev="$1"
+	local section device ifname
+
+	for section in $(uci -q show network | sed -n "s/^network\.\([^.=]*\)=interface$/\1/p"); do
+		device="$(uci -q get "network.$section.device")"
+		ifname="$(uci -q get "network.$section.ifname")"
+
+		[ "$device" = "$netdev" ] && {
+			echo "$section"
+			continue
+		}
+
+		for name in $ifname; do
+			[ "$name" = "$netdev" ] && {
+				echo "$section"
+				break
+			}
+		done
+	done
+}
+
+case "$ACTION" in
+	remove)
+		rm -f "$state_file"
+		exit 0
+		;;
+	add|change)
+		;;
+	*)
+		exit 0
+		;;
+esac
+
+is_usb_netdev "$iface" || exit 0
+
+device_path="$(netdev_device_path "$iface")" || exit 0
+[ -n "$device_path" ] || exit 0
+
+mkdir -p "$state_dir"
+token="$$.$(date +%s)"
+printf '%s %s\n' "$token" "$device_path" > "$state_file"
+logger -t m520-usb-net-debounce "delay ${delay}s before ifup for USB netdev $iface"
+
+interfaces="$(find_network_interfaces "$iface")"
+for network in $interfaces; do
+	logger -t m520-usb-net-debounce "hold $network while USB netdev $iface settles"
+	ifdown "$network"
+done
+
+(
+	sleep "$delay"
+
+	[ -f "$state_file" ] || exit 0
+	read -r current_token current_device_path < "$state_file"
+	[ "$current_token" = "$token" ] || exit 0
+	[ -e "/sys/class/net/$iface" ] || exit 0
+
+	device_path_after="$(netdev_device_path "$iface")" || exit 0
+	[ "$device_path_after" = "$current_device_path" ] || exit 0
+	[ -e "$device_path_after" ] || exit 0
+	is_usb_netdev "$iface" || exit 0
+
+	interfaces="$(find_network_interfaces "$iface")"
+	if [ -z "$interfaces" ]; then
+		logger -t m520-usb-net-debounce "USB netdev $iface is stable, but no UCI network interface matches it"
+		exit 0
+	fi
+
+	for network in $interfaces; do
+		logger -t m520-usb-net-debounce "USB netdev $iface is stable, ifup $network"
+		touch "$ifup_marker"
+		(sleep 15; rm -f "$ifup_marker") &
+		ifup "$network"
+	done
+) &
+
+exit 0

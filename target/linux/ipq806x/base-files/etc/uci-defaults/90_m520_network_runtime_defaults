@@ -1,0 +1,183 @@
+#!/bin/sh
+
+. /lib/functions.sh
+. /lib/functions/system.sh
+
+[ "$(board_name)" = "ruijie,rg-mtfi-m520" ] || exit 0
+
+base_mac="$(mtd_get_mac_ascii PRODUCTINFO ethaddr)"
+wifi0_mac=
+wifi1_mac=
+
+case "$base_mac" in
+	""|00:00:00:00:00:00|ff:ff:ff:ff:ff:ff)
+		;;
+	*)
+		wifi0_mac="$(macaddr_add "$base_mac" 2)"
+		wifi1_mac="$(macaddr_add "$base_mac" 3)"
+		;;
+esac
+
+[ -s /etc/config/wireless ] || [ ! -x /sbin/wifi ] || /sbin/wifi config >/dev/null 2>&1
+
+uci -q batch <<-EOF
+	set network.wan.ipv6='1'
+	set network.wan6='interface'
+	set network.wan6.device='@wan'
+	set network.wan6.proto='dhcpv6'
+	set network.wan6.reqaddress='try'
+	set network.wan6.reqprefix='auto'
+	set network.wan6.norelease='1'
+
+	set dhcp.lan.ra='server'
+	set dhcp.lan.dhcpv6='server'
+	set dhcp.lan.ra_slaac='1'
+	delete dhcp.lan.ra_flags
+	add_list dhcp.lan.ra_flags='managed-config'
+	add_list dhcp.lan.ra_flags='other-config'
+
+	set system.@system[0].log_file='/overlay/log/messages'
+	set system.@system[0].log_size='512'
+	set system.@system[0].watchdog='1'
+	set system.@system[0].watchdog_timeout='60'
+	set system.m520_usb_net_debounce='m520_usb_net_debounce'
+	set system.m520_usb_net_debounce.enabled='1'
+	set system.m520_usb_net_debounce.delay='10'
+
+	set wireless.radio0.band='5g'
+	set wireless.radio0.channel='36'
+	set wireless.radio0.htmode='VHT80'
+	set wireless.radio1.band='2g'
+	set wireless.radio1.channel='11'
+	set wireless.radio1.htmode='HT20'
+EOF
+
+lan_ipaddr="$(uci -q get network.lan.ipaddr)"
+lan_netmask="$(uci -q get network.lan.netmask)"
+lan_calc=
+lan_cidr=
+lan_broadcast=
+
+if [ -n "$lan_ipaddr" ]; then
+	case "$lan_ipaddr" in
+		*/*)
+			lan_calc="$(/bin/ipcalc.sh "$lan_ipaddr" 2>/dev/null)"
+			;;
+		*)
+			[ -n "$lan_netmask" ] && lan_calc="$(/bin/ipcalc.sh "$lan_ipaddr" "$lan_netmask" 2>/dev/null)"
+			;;
+	esac
+
+	if [ -n "$lan_calc" ]; then
+		NETWORK=
+		PREFIX=
+		BROADCAST=
+		eval "$lan_calc"
+		[ -n "$NETWORK" ] && [ -n "$PREFIX" ] && lan_cidr="$NETWORK/$PREFIX"
+		[ -n "$BROADCAST" ] && lan_broadcast="$BROADCAST"
+	fi
+fi
+
+if [ -s /etc/config/mwan3 ]; then
+	uci -q batch <<-EOF
+		delete mwan3.lan_local
+		delete mwan3.lan_broadcast
+		delete mwan3.usb_modem_local
+	EOF
+
+	uci -q batch <<-EOF
+		set mwan3.usb_modem_local='rule'
+		set mwan3.usb_modem_local.dest_ip='192.168.0.0/24'
+		set mwan3.usb_modem_local.use_policy='default'
+		set mwan3.usb_modem_local.family='ipv4'
+	EOF
+
+	if [ -n "$lan_cidr" ]; then
+		uci -q batch <<-EOF
+			set mwan3.lan_local='rule'
+			set mwan3.lan_local.dest_ip='$lan_cidr'
+			set mwan3.lan_local.use_policy='default'
+			set mwan3.lan_local.family='ipv4'
+		EOF
+	fi
+
+	if [ -n "$lan_broadcast" ]; then
+		uci -q batch <<-EOF
+			set mwan3.lan_broadcast='rule'
+			set mwan3.lan_broadcast.dest_ip='$lan_broadcast'
+			set mwan3.lan_broadcast.use_policy='default'
+			set mwan3.lan_broadcast.family='ipv4'
+		EOF
+	fi
+
+	mwan3_rule_pos=0
+	if [ -n "$lan_cidr" ]; then
+		uci -q reorder "mwan3.lan_local=$mwan3_rule_pos"
+		mwan3_rule_pos=$((mwan3_rule_pos + 1))
+	fi
+	if [ -n "$lan_broadcast" ]; then
+		uci -q reorder "mwan3.lan_broadcast=$mwan3_rule_pos"
+		mwan3_rule_pos=$((mwan3_rule_pos + 1))
+	fi
+	uci -q reorder "mwan3.usb_modem_local=$mwan3_rule_pos"
+fi
+
+[ -n "$wifi0_mac" ] && uci -q set wireless.radio0.macaddr="$wifi0_mac"
+[ -n "$wifi1_mac" ] && uci -q set wireless.radio1.macaddr="$wifi1_mac"
+[ -n "$wifi0_mac" ] && uci -q set wireless.default_radio0.macaddr="$wifi0_mac"
+[ -n "$wifi1_mac" ] && uci -q set wireless.default_radio1.macaddr="$wifi1_mac"
+
+for vif in default_radio0 default_radio1; do
+	uci -q delete "wireless.$vif.ieee80211r"
+	uci -q delete "wireless.$vif.ieee80211k"
+	uci -q delete "wireless.$vif.bss_transition"
+	uci -q delete "wireless.$vif.wnm_sleep_mode"
+	uci -q delete "wireless.$vif.ieee80211w"
+	uci -q delete "wireless.$vif.ocv"
+	uci -q delete "wireless.$vif.airtime_bss_weight"
+	uci -q delete "wireless.$vif.multicast_to_unicast"
+
+	key="$(uci -q get "wireless.$vif.key")"
+	[ -n "$key" ] && uci -q set "wireless.$vif.encryption=psk2+ccmp"
+done
+
+mkdir -p /overlay/log
+
+for iface in $(uci -q show network | sed -n "s/^network\.\([^.=]*\)=interface$/\1/p"); do
+	[ "$iface" = "lan" ] || [ "$iface" = "wan" ] || [ "$iface" = "wan6" ] && continue
+
+	proto="$(uci -q get "network.$iface.proto")"
+	device="$(uci -q get "network.$iface.device")"
+
+	case "$proto:$device" in
+	qmi:*|mbim:*|ncm:*|*:wwan*)
+		uci -q set "network.$iface.auto=0"
+		;;
+	esac
+done
+
+for service in passwall_server mosdns xray chinadns-ng sing-box; do
+	[ -x "/etc/init.d/$service" ] && "/etc/init.d/$service" disable >/dev/null 2>&1
+done
+
+for cfg in mosdns xray chinadns sing-box; do
+	[ -e "/etc/config/$cfg" ] || continue
+
+	uci -q show "$cfg" | sed -n "s/^\($cfg\\.[^=]*\\.enabled\)=.*/\1/p" | \
+	while read -r opt; do
+		uci -q set "$opt=0"
+	done
+done
+
+uci -q commit network
+uci -q commit dhcp
+uci -q commit system
+uci -q commit wireless
+[ -s /etc/config/mwan3 ] && uci -q commit mwan3
+uci -q commit passwall
+uci -q commit mosdns
+uci -q commit xray
+uci -q commit chinadns
+uci -q commit sing-box
+
+exit 0

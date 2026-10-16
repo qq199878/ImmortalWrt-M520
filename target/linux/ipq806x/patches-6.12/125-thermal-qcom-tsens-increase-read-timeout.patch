@@ -1,0 +1,20 @@
+From: Codex <codex@example.invalid>
+Subject: thermal: qcom: tsens: increase temperature ready timeout
+
+IPQ806x can report a transient -ETIMEDOUT from the first thermal zone
+during early boot when the TSENS ready bit is not set within the current
+100 us window. Increase the wait budget so early thermal checks do not
+log a spurious Temperature check failed (-110) before the sensor has had
+time to produce a sample.
+
+--- a/drivers/thermal/qcom/tsens.h
++++ b/drivers/thermal/qcom/tsens.h
+@@ -16,7 +16,7 @@
+ #define CAL_DEGC_PT2		120
+ #define SLOPE_FACTOR		1000
+ #define SLOPE_DEFAULT		3200
+-#define TIMEOUT_US		100
++#define TIMEOUT_US		10000
+ #define THRESHOLD_MAX_ADC_CODE	0x3ff
+ #define THRESHOLD_MIN_ADC_CODE	0x0
+ 

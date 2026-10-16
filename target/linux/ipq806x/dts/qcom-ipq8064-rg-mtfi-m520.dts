@@ -14,6 +14,81 @@
 		device_type = "memory";
 	};
 
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		ramoops@42100000 {
+			compatible = "ramoops";
+			reg = <0x42100000 0x40000>;
+			record-size = <0x4000>;
+			console-size = <0x4000>;
+			ftrace-size = <0x4000>;
+			pmsg-size = <0x4000>;
+		};
+	};
+
+	thermal-zones {
+		sensor0-thermal {
+			polling-delay-passive = <250>;
+			polling-delay = <1000>;
+			thermal-sensors = <&tsens 0>;
+
+			trips {
+				cpu-critical {
+					temperature = <105000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+
+				cpu-hot {
+					temperature = <95000>;
+					hysteresis = <2000>;
+					type = "hot";
+				};
+
+				cpu_passive: cpu-passive {
+					temperature = <90000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu_passive>;
+					cooling-device = <&cpu0 0 10>;
+				};
+
+				map1 {
+					trip = <&cpu_passive>;
+					cooling-device = <&cpu1 0 10>;
+				};
+			};
+		};
+
+		board-thermal {
+			polling-delay-passive = <0>;
+			polling-delay = <10000>;
+			thermal-sensors = <&lm75_temp>;
+
+			trips {
+				board-critical {
+					temperature = <95000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+
+				board-hot {
+					temperature = <80000>;
+					hysteresis = <2000>;
+					type = "hot";
+				};
+			};
+		};
+	};
+
 	aliases {
 		mdio-gpio0 = &mdio0;
 		sdcc1 = &sdcc1;
@@ -25,13 +100,14 @@
 	};
 
 	chosen {
-		bootargs = "root=/dev/mmcblk0p3 rootfstype=squashfs,ext4 rootwait noinitrd";
+		bootargs = "root=/dev/mmcblk0p3 rootfstype=squashfs,ext4 rootwait noinitrd usbcore.autosuspend=-1";
 	};
 
 	leds {
 		compatible = "gpio-leds";
 
 		led_sys: sys {
+			label = "green:sys";
 			function = LED_FUNCTION_STATUS;
 			color = <LED_COLOR_ID_GREEN>;
 			gpios = <&gpio_ext 15 GPIO_ACTIVE_LOW>;
@@ -48,6 +124,14 @@
 			gpios = <&qcom_pinmux 54 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_RESTART>;
 		};
+	};
+
+	vdd_3v3_lm75: regulator-lm75-vdd {
+		compatible = "regulator-fixed";
+		regulator-name = "lm75-vdd";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
 	};
 };
 
@@ -66,6 +150,13 @@
 		/delete-property/ function;
 		/delete-property/ drive-strength;
 		/delete-property/ bias-disable;
+
+		mux {
+			pins = "gpio0", "gpio1";
+			function = "mdio";
+			drive-strength = <8>;
+			bias-disable;
+		};
 
 		clk {
 			pins = "gpio1";
@@ -149,9 +240,11 @@
 	i2c@124a0000 {
 		status = "okay";
 
-		lm75@48 {
-			compatible = "lm75";
+		lm75_temp: temperature-sensor@48 {
+			compatible = "national,lm75", "lm75";
 			reg = <0x48>;
+			vs-supply = <&vdd_3v3_lm75>;
+			#thermal-sensor-cells = <0>;
 		};
 
 		pcf8563: rtc@51 {
@@ -258,6 +351,20 @@
 				label = "ART";
 				reg = <0x180000 0x40000>;
 				read-only;
+
+				nvmem-layout {
+					compatible = "fixed-layout";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					precal_ART_1000: precal@1000 {
+						reg = <0x1000 0x844>;
+					};
+
+					precal_ART_5000: precal@5000 {
+						reg = <0x5000 0x844>;
+					};
+				};
 			};
 		};
 	};
@@ -271,7 +378,23 @@
 	status = "okay";
 };
 
+&hs_phy_0 {
+	status = "okay";
+};
+
+&ss_phy_0 {
+	status = "okay";
+};
+
 &usb3_0 {
+	status = "okay";
+};
+
+&hs_phy_1 {
+	status = "okay";
+};
+
+&ss_phy_1 {
 	status = "okay";
 };
 
@@ -286,12 +409,30 @@
 	pinctrl-names = "default";
 };
 
+&pcie_bridge0 {
+	wifi@0,0 {
+		compatible = "qcom,ath10k";
+		reg = <0x00010000 0 0 0 0>;
+		nvmem-cells = <&precal_ART_1000>;
+		nvmem-cell-names = "pre-calibration";
+	};
+};
+
 &pcie1 {
 	status = "okay";
 	reset-gpio = <&qcom_pinmux 48 GPIO_ACTIVE_HIGH>;
 	pinctrl-0 = <&pcie1_pins>;
 	pinctrl-names = "default";
 	max-link-speed = <1>;
+};
+
+&pcie_bridge1 {
+	wifi@0,0 {
+		compatible = "qcom,ath10k";
+		reg = <0x00010000 0 0 0 0>;
+		nvmem-cells = <&precal_ART_5000>;
+		nvmem-cell-names = "pre-calibration";
+	};
 };
 
 &mdio0 {

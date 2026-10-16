@@ -1,0 +1,21 @@
+From: Codex <codex@example.invalid>
+Subject: ath10k-ct: demote unsupported pdev param log
+
+CT firmware can legitimately lack some pdev parameters used by common
+ath10k setup paths.  The command still returns -EOPNOTSUPP, but printing a
+warning for WMI_PDEV_PARAM_UNSUPPORTED during normal operation is noisy on
+devices where wireless continues to work.
+
+--- a/ath10k-6.18/wmi.c
++++ b/ath10k-6.18/wmi.c
+@@ -7261,8 +7261,8 @@ ath10k_wmi_op_gen_pdev_set_param(struct
+ 	struct sk_buff *skb;
+ 
+ 	if (id == WMI_PDEV_PARAM_UNSUPPORTED) {
+-		ath10k_warn(ar, "pdev param %d not supported by firmware\n",
+-			    id);
++		ath10k_dbg(ar, ATH10K_DBG_WMI,
++			   "pdev param %d not supported by firmware\n", id);
+ 		return ERR_PTR(-EOPNOTSUPP);
+ 	}
+ 

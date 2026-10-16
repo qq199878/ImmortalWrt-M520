@@ -5,6 +5,49 @@
 IEEE_PATH="/sys/class/ieee80211"
 THERMAL_PATH="/sys/class/thermal"
 
+read_temp() {
+	local file="$1"
+	awk '
+		$1 ~ /^-?[0-9]+$/ {
+			v = $1
+			if (v >= 1000)
+				v = v / 1000
+			printf("%.1f°C", v)
+		}
+	' "$file" 2>"/dev/null"
+}
+
+read_max_soc_temp() {
+	local zone type value max
+
+	for zone in "$THERMAL_PATH"/thermal_zone*; do
+		[ -d "$zone" ] || continue
+		[ -r "$zone/temp" ] || continue
+
+		type="$(cat "$zone/type" 2>"/dev/null")"
+		case "$type" in
+		*[Cc][Pp][Uu]*|*[Ss][Oo][Cc]*|*[Tt][Ss][Ee][Nn][Ss]*|*[Tt][Hh][Ee][Rr][Mm]*)
+			value="$(awk '$1 ~ /^-?[0-9]+$/ { print $1; exit }' "$zone/temp" 2>"/dev/null")"
+			[ -n "$value" ] || continue
+			[ -z "$max" ] && max="$value" && continue
+			[ "$value" -gt "$max" ] && max="$value"
+			;;
+		esac
+	done
+
+	if [ -z "$max" ]; then
+		for zone in "$THERMAL_PATH"/thermal_zone*; do
+			[ -r "$zone/temp" ] || continue
+			value="$(awk '$1 ~ /^-?[0-9]+$/ { print $1; exit }' "$zone/temp" 2>"/dev/null")"
+			[ -n "$value" ] || continue
+			[ -z "$max" ] && max="$value" && continue
+			[ "$value" -gt "$max" ] && max="$value"
+		done
+	fi
+
+	[ -n "$max" ] && echo "$max" | awk '{ v = $1; if (v >= 1000) v = v / 1000; printf("%.1f°C", v) }'
+}
+
 case "$DISTRIB_TARGET" in
 ipq40xx/*|ipq806x/*)
 	wifi_temp="$(awk '{printf("%.1f°C ", $0 / 1000)}' "$IEEE_PATH"/phy*/device/hwmon/hwmon*/temp1_input 2>"/dev/null" | awk '$1=$1')"
@@ -20,21 +63,21 @@ esac
 case "$DISTRIB_TARGET" in
 ipq40xx/*)
 	if [ -e "$IEEE_PATH/phy0/hwmon0/temp1_input" ]; then
-		mt76_temp="$(awk -F ': ' '{print $2}' "$IEEE_PATH/phy0/hwmon0/temp1_input" 2>"/dev/null")°C"
+		mt76_temp="$(read_temp "$IEEE_PATH/phy0/hwmon0/temp1_input")"
 	fi
 	[ -z "$mt76_temp" ] || wifi_temp="${wifi_temp:+$wifi_temp }$mt76_temp"
 	;;
 *)
-	cpu_temp="$(awk '{printf("%.1f°C", $0 / 1000)}' "$THERMAL_PATH/thermal_zone0/temp" 2>"/dev/null")"
+	soc_temp="$(read_max_soc_temp)"
 	;;
 esac
 
-if [ -n "$cpu_temp" ] && [ -z "$wifi_temp" ]; then
-	echo -n "CPU: $cpu_temp"
-elif [ -z "$cpu_temp" ] && [ -n "$wifi_temp" ]; then
+if [ -n "$soc_temp" ] && [ -z "$wifi_temp" ]; then
+	echo -n "SoC: $soc_temp"
+elif [ -z "$soc_temp" ] && [ -n "$wifi_temp" ]; then
 	echo -n "WiFi: $wifi_temp"
-elif [ -n "$cpu_temp" ] && [ -n "$wifi_temp" ]; then
-	echo -n "CPU: $cpu_temp, WiFi: $wifi_temp"
+elif [ -n "$soc_temp" ] && [ -n "$wifi_temp" ]; then
+	echo -n "SoC: $soc_temp, WiFi: $wifi_temp"
 else
 	echo -n "No temperature info"
 fi

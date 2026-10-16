@@ -1,0 +1,27 @@
+From: Codex <codex@example.invalid>
+Subject: net: stmmac: demote missing optional IRQ logs
+
+The platform glue treats eth_wake_irq and sfty as optional interrupts and
+falls back cleanly when they are absent.  Avoid printing informational boot
+messages for missing optional resources on boards which only provide macirq.
+
+--- a/drivers/net/ethernet/stmicro/stmmac/stmmac_platform.c
++++ b/drivers/net/ethernet/stmicro/stmmac/stmmac_platform.c
+@@ -729,7 +729,7 @@ int stmmac_get_platform_resources(struct
+ 	if (stmmac_res->wol_irq < 0) {
+ 		if (stmmac_res->wol_irq == -EPROBE_DEFER)
+ 			return -EPROBE_DEFER;
+-		dev_info(&pdev->dev, "IRQ eth_wake_irq not found\n");
++		dev_dbg(&pdev->dev, "IRQ eth_wake_irq not found\n");
+ 		stmmac_res->wol_irq = stmmac_res->irq;
+ 	}
+ 
+@@ -738,7 +738,7 @@ int stmmac_get_platform_resources(struct
+ 	if (stmmac_res->sfty_irq < 0) {
+ 		if (stmmac_res->sfty_irq == -EPROBE_DEFER)
+ 			return -EPROBE_DEFER;
+-		dev_info(&pdev->dev, "IRQ sfty not found\n");
++		dev_dbg(&pdev->dev, "IRQ sfty not found\n");
+ 	}
+ 
+ 	stmmac_res->addr = devm_platform_ioremap_resource(pdev, 0);

@@ -4,7 +4,7 @@
 
 PHYNBR=${DEVPATH##*/phy}
 
-[ -n $PHYNBR ] || exit 0
+[ -n "$PHYNBR" ] || exit 0
 
 . /lib/functions.sh
 . /lib/functions/system.sh
@@ -16,6 +16,18 @@ case "$board" in
 		echo "##### PHYNBR=$PHYNBR DEVPATH=$DEVPATH"
 		[ "$PHYNBR" = "0" ] && echo $(mtd_get_mac_ascii CFG1 RADIOADDR0) > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && echo $(mtd_get_mac_ascii CFG1 RADIOADDR1) > /sys${DEVPATH}/macaddress
+		;;
+	ruijie,rg-mtfi-m520)
+		base_mac=$(mtd_get_mac_ascii PRODUCTINFO ethaddr)
+
+		case "$base_mac" in
+			""|00:00:00:00:00:00|ff:ff:ff:ff:ff:ff)
+				;;
+			*)
+				[ "$PHYNBR" = "0" ] && echo "$(macaddr_add "$base_mac" 2)" > /sys${DEVPATH}/macaddress
+				[ "$PHYNBR" = "1" ] && echo "$(macaddr_add "$base_mac" 3)" > /sys${DEVPATH}/macaddress
+				;;
+		esac
 		;;
 esac
 

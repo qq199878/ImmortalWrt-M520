@@ -1,0 +1,220 @@
+From: OpenWrt
+Subject: ath10k: use direct firmware requests for optional probe files
+
+With CONFIG_FW_LOADER_USER_HELPER_FALLBACK enabled, optional ath10k
+firmware probes can trigger the sysfs/userspace firmware fallback and wait
+for the global firmware loading timeout. This is especially visible during
+boot when ath10k probes non-existent pre-calibration files, newer firmware
+API files, and board API files before falling back to the files that are
+actually present.
+
+Use request_firmware_direct() for optional probe/fallback candidates so
+missing files fail immediately. Keep the normal request path for the QCA988X
+firmware API 5 file used by OpenWrt's qca988x firmware package, and for the
+legacy board/calibration files that are actually consumed after optional
+probes fail.
+
+--- a/drivers/net/wireless/ath/ath10k/core.c
++++ b/drivers/net/wireless/ath/ath10k/core.c
+@@ -934,8 +934,8 @@
+ }
+ 
+ static const struct firmware *ath10k_fetch_fw_file(struct ath10k *ar,
+-						   const char *dir,
+-						   const char *file)
++						   const char *dir, const char *file,
++						   bool direct)
+ {
+ 	char filename[100];
+ 	const struct firmware *fw;
+@@ -950,7 +950,10 @@
+ 	if (ar->board_name) {
+ 		snprintf(filename, sizeof(filename), "%s/%s/%s",
+ 			 dir, ar->board_name, file);
+-		ret = firmware_request_nowarn(&fw, filename, ar->dev);
++		if (direct)
++			ret = request_firmware_direct(&fw, filename, ar->dev);
++		else
++			ret = firmware_request_nowarn(&fw, filename, ar->dev);
+ 		ath10k_dbg(ar, ATH10K_DBG_BOOT, "boot fw request '%s': %d\n",
+ 			   filename, ret);
+ 		if (!ret)
+@@ -958,7 +961,10 @@
+ 	}
+ 
+ 	snprintf(filename, sizeof(filename), "%s/%s", dir, file);
+-	ret = firmware_request_nowarn(&fw, filename, ar->dev);
++	if (direct)
++		ret = request_firmware_direct(&fw, filename, ar->dev);
++	else
++		ret = firmware_request_nowarn(&fw, filename, ar->dev);
+ 	ath10k_dbg(ar, ATH10K_DBG_BOOT, "boot fw request '%s': %d\n",
+ 		   filename, ret);
+ 	if (ret)
+@@ -967,6 +973,20 @@
+ 	return fw;
+ }
+ 
++static const struct firmware *ath10k_fetch_fw_file_nowarn(struct ath10k *ar,
++							  const char *dir,
++							  const char *file)
++{
++	return ath10k_fetch_fw_file(ar, dir, file, false);
++}
++
++static const struct firmware *ath10k_fetch_fw_file_direct(struct ath10k *ar,
++							  const char *dir,
++							  const char *file)
++{
++	return ath10k_fetch_fw_file(ar, dir, file, true);
++}
++
+ static int ath10k_push_board_ext_data(struct ath10k *ar, const void *data,
+ 				      size_t data_len)
+ {
+@@ -1280,7 +1300,8 @@
+ 	scnprintf(filename, sizeof(filename), "pre-cal-%s-%s.bin",
+ 		  ath10k_bus_str(ar->hif.bus), dev_name(ar->dev));
+ 
+-	ar->pre_cal_file = ath10k_fetch_fw_file(ar, ATH10K_FW_DIR, filename);
++	ar->pre_cal_file = ath10k_fetch_fw_file_direct(ar, ATH10K_FW_DIR,
++						       filename);
+ 	if (!IS_ERR(ar->pre_cal_file))
+ 		goto success;
+ 
+@@ -1288,7 +1309,8 @@
+ 	scnprintf(filename, sizeof(filename), "cal-%s-%s.bin",
+ 		  ath10k_bus_str(ar->hif.bus), dev_name(ar->dev));
+ 
+-	ar->cal_file = ath10k_fetch_fw_file(ar, ATH10K_FW_DIR, filename);
++	ar->cal_file = ath10k_fetch_fw_file_nowarn(ar, ATH10K_FW_DIR,
++						   filename);
+ 	if (IS_ERR(ar->cal_file))
+ 		/* calibration file is optional, don't print any warnings */
+ 		return PTR_ERR(ar->cal_file);
+@@ -1308,13 +1330,13 @@
+ 		scnprintf(boardname, sizeof(boardname), "board-%s-%s.bin",
+ 			  ath10k_bus_str(ar->hif.bus), dev_name(ar->dev));
+ 
+-		ar->normal_mode_fw.board = ath10k_fetch_fw_file(ar,
+-								ar->hw_params.fw.dir,
+-								boardname);
++		ar->normal_mode_fw.board = ath10k_fetch_fw_file_direct(ar,
++								       ar->hw_params.fw.dir,
++								       boardname);
+ 		if (IS_ERR(ar->normal_mode_fw.board)) {
+-			fw = ath10k_fetch_fw_file(ar,
+-						  ar->hw_params.fw.dir,
+-						  ATH10K_BOARD_DATA_FILE);
++			fw = ath10k_fetch_fw_file_nowarn(ar,
++							 ar->hw_params.fw.dir,
++							 ATH10K_BOARD_DATA_FILE);
+ 			ar->normal_mode_fw.board = fw;
+ 		}
+ 
+@@ -1324,8 +1346,8 @@
+ 		ar->normal_mode_fw.board_data = ar->normal_mode_fw.board->data;
+ 		ar->normal_mode_fw.board_len = ar->normal_mode_fw.board->size;
+ 	} else if (bd_ie_type == ATH10K_BD_IE_BOARD_EXT) {
+-		fw = ath10k_fetch_fw_file(ar, ar->hw_params.fw.dir,
+-					  ATH10K_EBOARD_DATA_FILE);
++		fw = ath10k_fetch_fw_file_nowarn(ar, ar->hw_params.fw.dir,
++						 ATH10K_EBOARD_DATA_FILE);
+ 		ar->normal_mode_fw.ext_board = fw;
+ 		if (IS_ERR(ar->normal_mode_fw.ext_board))
+ 			return PTR_ERR(ar->normal_mode_fw.ext_board);
+@@ -1497,9 +1519,9 @@
+ 
+ 	/* Skip if already fetched during board data download */
+ 	if (!ar->normal_mode_fw.board)
+-		ar->normal_mode_fw.board = ath10k_fetch_fw_file(ar,
+-								ar->hw_params.fw.dir,
+-								filename);
++		ar->normal_mode_fw.board = ath10k_fetch_fw_file_direct(ar,
++								       ar->hw_params.fw.dir,
++								       filename);
+ 	if (IS_ERR(ar->normal_mode_fw.board))
+ 		return PTR_ERR(ar->normal_mode_fw.board);
+ 
+@@ -2018,7 +2040,8 @@
+ }
+ 
+ int ath10k_core_fetch_firmware_api_n(struct ath10k *ar, const char *name,
+-				     struct ath10k_fw_file *fw_file)
++				     struct ath10k_fw_file *fw_file,
++				     bool direct)
+ {
+ 	size_t magic_len, len, ie_len;
+ 	int ie_id, i, index, bit, ret;
+@@ -2027,8 +2050,12 @@
+ 	__le32 *timestamp, *version;
+ 
+ 	/* first fetch the firmware file (firmware-*.bin) */
+-	fw_file->firmware = ath10k_fetch_fw_file(ar, ar->hw_params.fw.dir,
+-						 name);
++	if (direct)
++		fw_file->firmware = ath10k_fetch_fw_file_direct(ar,
++								ar->hw_params.fw.dir, name);
++	else
++		fw_file->firmware = ath10k_fetch_fw_file_nowarn(ar,
++								ar->hw_params.fw.dir, name);
+ 	if (IS_ERR(fw_file->firmware))
+ 		return PTR_ERR(fw_file->firmware);
+ 
+@@ -2215,8 +2242,9 @@
+ 
+ static int ath10k_core_fetch_firmware_files(struct ath10k *ar)
+ {
+-	int ret, i;
+ 	char fw_name[100];
++	int api5_ret = -ENOENT;
++	int ret, i;
+ 
+ 	/* calibration file is optional, don't check for any errors */
+ 	ath10k_fetch_cal_file(ar);
+@@ -2228,11 +2256,20 @@
+ 
+ 		ath10k_core_get_fw_name(ar, fw_name, sizeof(fw_name), ar->fw_api);
+ 		ret = ath10k_core_fetch_firmware_api_n(ar, fw_name,
+-						       &ar->normal_mode_fw.fw_file);
++						       &ar->normal_mode_fw.fw_file,
++						       i != 5);
+ 		if (!ret)
+ 			goto success;
++		if (i == 5)
++			api5_ret = ret;
+ 	}
+ 
++	/* We keep firmware-5.bin on the original request path above. If it is
++	 * missing, prefer reporting that error over errors from lower optional
++	 * API probes.
++	 */
++	ret = api5_ret;
++
+ 	/* we end up here if we couldn't fetch any firmware */
+ 
+ 	ath10k_err(ar, "Failed to find firmware-N.bin (N between %d and %d) from %s: %d",
+--- a/drivers/net/wireless/ath/ath10k/core.h
++++ b/drivers/net/wireless/ath/ath10k/core.h
+@@ -1351,7 +1351,8 @@
+ 				     char *buf,
+ 				     size_t max_len);
+ int ath10k_core_fetch_firmware_api_n(struct ath10k *ar, const char *name,
+-				     struct ath10k_fw_file *fw_file);
++				     struct ath10k_fw_file *fw_file,
++				     bool direct);
+ 
+ int ath10k_core_start(struct ath10k *ar, enum ath10k_firmware_mode mode,
+ 		      const struct ath10k_fw_components *fw_components);
+--- a/drivers/net/wireless/ath/ath10k/testmode.c
++++ b/drivers/net/wireless/ath/ath10k/testmode.c
+@@ -191,7 +191,8 @@
+ 	}
+ 
+ 	ret = ath10k_core_fetch_firmware_api_n(ar, fw_name,
+-					       &ar->testmode.utf_mode_fw.fw_file);
++					       &ar->testmode.utf_mode_fw.fw_file,
++					       false);
+ 	if (ret == 0) {
+ 		ath10k_dbg(ar, ATH10K_DBG_TESTMODE, "testmode using fw utf api 2");
+ 		goto out;

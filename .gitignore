@@ -35,3 +35,11 @@ git-src
 .cproject
 .ccache
 .vscode*
+
+# ==== M520 local: build logs & config backups (do not commit) ====
+*.log
+putty.log
+.config.before-*
+
+# bully prebuilt binary (source only)
+package/bully/src/bully

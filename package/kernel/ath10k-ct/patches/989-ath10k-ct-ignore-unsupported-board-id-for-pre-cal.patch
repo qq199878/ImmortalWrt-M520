@@ -1,0 +1,27 @@
+From: OpenWrt
+Subject: ath10k-ct: ignore unsupported OTP board id with pre-calibration
+
+QCA988x devices using pre-calibration data can report -EOPNOTSUPP when
+ath10k tries to query the board id from OTP. The normal firmware probe path
+already treats -EOPNOTSUPP as non-fatal and continues with board file loading.
+
+Do the same in the pre-calibration configuration path to avoid aborting or
+logging an error for devices whose OTP does not provide a board id.
+
+--- a/ath10k-6.18/core.c
++++ b/ath10k-6.18/core.c
+@@ -2807,10 +2807,13 @@ static int ath10k_core_pre_cal_config(st
+ 	}
+ 
+ 	ret = ath10k_core_get_board_id_from_otp(ar);
+-	if (ret) {
++	if (ret && ret != -EOPNOTSUPP) {
+ 		ath10k_err(ar, "failed to get board id: %d\n", ret);
+ 		return ret;
+ 	}
++	if (ret == -EOPNOTSUPP)
++		ath10k_dbg(ar, ATH10K_DBG_BOOT,
++			   "boot did not find a pre-calibration board id, continue with board file\n");
+ 
+ 	ret = ath10k_download_and_run_otp(ar);
+ 	if (ret) {

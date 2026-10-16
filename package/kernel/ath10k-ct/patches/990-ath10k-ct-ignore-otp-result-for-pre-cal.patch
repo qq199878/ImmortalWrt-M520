@@ -1,0 +1,35 @@
+From: OpenWrt
+Subject: ath10k-ct: ignore OTP calibration result when pre-calibration is loaded
+
+Some QCA988x cards provide board-specific pre-calibration data from NVMEM
+and still return a non-zero OTP status when the pre-calibration path asks
+firmware to run the OTP flash section. The pre-calibration data was already
+downloaded successfully, so treat that OTP status as non-fatal only for
+pre-calibration modes. Keep normal OTP calibration failures fatal.
+
+--- a/ath10k-6.18/core.c
++++ b/ath10k-6.18/core.c
+@@ -2224,10 +2224,19 @@ static int ath10k_download_and_run_otp(s
+ 
+ 	ath10k_dbg(ar, ATH10K_DBG_BOOT, "boot otp execute result %d\n", result);
+ 
+-	if (!(skip_otp || test_bit(ATH10K_FW_FEATURE_IGNORE_OTP_RESULT,
+-				   ar->running_fw->fw_file.fw_features)) &&
+-	    result != 0) {
+-		ath10k_err(ar, "otp calibration failed: %d", result);
++	if (result != 0 &&
++	    !(skip_otp || test_bit(ATH10K_FW_FEATURE_IGNORE_OTP_RESULT,
++				   ar->running_fw->fw_file.fw_features))) {
++		if (ar->cal_mode == ATH10K_PRE_CAL_MODE_DT ||
++		    ar->cal_mode == ATH10K_PRE_CAL_MODE_FILE ||
++		    ar->cal_mode == ATH10K_PRE_CAL_MODE_NVMEM) {
++			ath10k_dbg(ar, ATH10K_DBG_BOOT,
++				   "boot ignoring otp calibration result %d with pre-calibration data\n",
++				   result);
++			return 0;
++		}
++
++		ath10k_err(ar, "otp calibration failed: %d\n", result);
+ 		return -EINVAL;
+ 	}
+ 
