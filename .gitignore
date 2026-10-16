@@ -43,3 +43,4 @@ putty.log
 
 # bully prebuilt binary (source only)
 package/bully/src/bully
+*.bak_*
