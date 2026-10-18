@@ -1,3 +1,17 @@
+diff --git a/Makefile b/Makefile
+index 15310ff..a2e8837 100644
+--- a/Makefile
++++ b/Makefile
+@@ -218,7 +218,8 @@ ccflags-$(ECM_CLASSIFIER_NL_ENABLE) += -DECM_CLASSIFIER_NL_ENABLE
+ # #############################################################################
+ # Define ECM_CLASSIFIER_DSCP_ENABLE=y in order to enable DSCP classifier.
+ # #############################################################################
+-ECM_CLASSIFIER_DSCP_ENABLE=y
++# 2026-10: 主线内核无 nf_conntrack_dscpremark_ext，DSCP 分类器依赖 QSDK 私有扩展，故关闭
++ECM_CLASSIFIER_DSCP_ENABLE=n
+ ecm-$(ECM_CLASSIFIER_DSCP_ENABLE) += ecm_classifier_dscp.o
+ ccflags-$(ECM_CLASSIFIER_DSCP_ENABLE) += -DECM_CLASSIFIER_DSCP_ENABLE
+ 
 diff --git a/ecm_classifier_hyfi.c b/ecm_classifier_hyfi.c
 index 3d57cd2..b8df5c3 100644
 --- a/ecm_classifier_hyfi.c

@@ -66,12 +66,38 @@ jobs:
 
       - name: 载入配置
         run: |
-          CFG="configs/${{ github.event.inputs.config_file || 'm520.config' }}"
-          echo "使用配置: $CFG"
+          set -x
+          RAW="${{ github.event.inputs.config_file }}"
+          echo "原始输入 config_file = [$RAW]"
+          echo "===== configs/ 目录内容 ====="
+          ls -la configs/
+          # 容错：允许用户填 m520-nss.config 或 configs/m520-nss.config
+          NAME="$RAW"
+          if [ -z "$NAME" ]; then
+            NAME="m520.config"
+          fi
+          NAME="${NAME#configs/}"
+          CFG="configs/$NAME"
+          echo "最终使用配置: $CFG"
+          if [ ! -f "$CFG" ]; then
+            echo "!!! 错误：配置文件不存在: $CFG"
+            echo "可用配置："
+            ls -1 configs/*.config
+            exit 1
+          fi
           cp "$CFG" .config
+          echo "===== 开始 make defconfig ====="
           make defconfig
+          RC=$?
+          echo "make defconfig 返回码: $RC"
+          if [ $RC -ne 0 ]; then
+            echo "!!! defconfig 失败"
+            exit $RC
+          fi
           echo "===== defconfig 后的 NSS 项 ====="
           grep -E 'qca-nss|iptables-mod-extra' .config || echo "(无 NSS 项)"
+          echo "===== defconfig 后的 package/qca 项 ====="
+          grep -E 'CONFIG_PACKAGE.*qca' .config || echo "(无 qca 项)"
 
       - name: 下载源码包
         run: |
