@@ -1,0 +1,52 @@
+diff --git a/nss_core.c b/nss_core.c
+index 26639e3..dfb1d22 100644
+--- a/nss_core.c
++++ b/nss_core.c
+@@ -47,7 +47,8 @@
+ (((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(3, 11, 0)))) || \
+ (((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(3, 19, 0)))) || \
+ (((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)))) || \
+-(((LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0))))))
++(((LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)))) || \
++(((LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0))))))
+ #error "Check skb recycle code in this file to match Linux version"
+ #endif
+ 
+@@ -697,7 +698,9 @@ static inline void nss_core_handle_virt_if_pkt(struct nss_ctx_instance *nss_ctx,
+ 	 * Mimic Linux behavior to allow multi-queue netdev choose which queue to use
+ 	 */
+ 	if (ndev->netdev_ops->ndo_select_queue) {
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0))
++		queue_offset = ndev->netdev_ops->ndo_select_queue(ndev, nbuf, NULL, NULL);
++#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0))
+ 		queue_offset = ndev->netdev_ops->ndo_select_queue(ndev, nbuf, NULL);
+ #else
+ 		queue_offset = ndev->netdev_ops->ndo_select_queue(ndev, nbuf, NULL, NULL);
+@@ -2169,7 +2172,7 @@ int nss_core_handle_napi(struct napi_struct *napi, int budget)
+ 	} while ((int_ctx->cause) && (budget));
+ 
+ 	if (int_ctx->cause == 0) {
+-		napi_complete(napi);
++		napi_complete_done(napi, budget);
+ 
+ 		/*
+ 		 * Re-enable any further interrupt from this IRQ
+@@ -2206,7 +2209,7 @@ int nss_core_handle_napi_queue(struct napi_struct *napi, int budget)
+ 
+ 	processed = nss_core_handle_cause_queue(int_ctx, int_ctx->cause, budget);
+ 	if (processed < budget) {
+-		napi_complete(napi);
++		napi_complete_done(napi, budget);
+ 		enable_irq(int_ctx->irq);
+ 	}
+ 
+@@ -2222,7 +2225,7 @@ int nss_core_handle_napi_non_queue(struct napi_struct *napi, int budget)
+ 	struct int_ctx_instance *int_ctx = container_of(napi, struct int_ctx_instance, napi);
+ 
+ 	nss_core_handle_cause_nonqueue(int_ctx, int_ctx->cause, 0);
+-	napi_complete(napi);
++	napi_complete_done(napi, budget);
+ 	enable_irq(int_ctx->irq);
+ 	return 0;
+ }

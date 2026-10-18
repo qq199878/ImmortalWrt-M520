@@ -7,6 +7,10 @@ on:
         description: 'configs/ 下的配置文件'
         required: false
         default: 'm520.config'
+      target_pkg:
+        description: '只编译指定包（留空=全量编译）'
+        required: false
+        default: ''
   push:
     paths:
       - 'configs/**'
@@ -62,8 +66,12 @@ jobs:
 
       - name: 载入配置
         run: |
-          cp configs/${{ github.event.inputs.config_file || 'm520.config' }} .config
+          CFG="configs/${{ github.event.inputs.config_file || 'm520.config' }}"
+          echo "使用配置: $CFG"
+          cp "$CFG" .config
           make defconfig
+          echo "===== defconfig 后的 NSS 项 ====="
+          grep -E 'qca-nss|iptables-mod-extra' .config || echo "(无 NSS 项)"
 
       - name: 下载源码包
         run: |
@@ -71,9 +79,34 @@ jobs:
 
       - name: 编译固件
         run: |
-          make -j$(nproc) || make -j1 V=s
+          set -o pipefail
+          TARGET="${{ github.event.inputs.target_pkg }}"
+          if [ -n "$TARGET" ]; then
+            echo "只编译: $TARGET"
+            make -j$(nproc) "$TARGET" V=s 2>&1 | tee build.log
+          else
+            echo "全量编译"
+            make -j$(nproc) 2>&1 | tee build.log || make -j1 V=s 2>&1 | tee -a build.log
+          fi
 
+      - name: 上传编译日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: warn
+      - name: 上传 NSS 内核模块
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nss-kmods
+          path: |
+            bin/targets/ipq806x/generic/packages/*.ipk
+            bin/targets/ipq806x/generic/kmods/**/*.ko
+          if-no-files-found: warn
       - name: 上传固件产物
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: immortalwrt-m520-firmware
