@@ -1362,12 +1362,43 @@ config KERNEL_MPTCP_IPV6
 	default KERNEL_MPTCP
 endif
 
+config KERNEL_REGULATOR_NSS_VOLT
+	bool "Qualcomm IPQ806X NSS voltage regulator"
+	default y if TARGET_ipq806x || TARGET_ipq_ipq806x
+	help
+	   Driver for the NSS voltage regulator on IPQ806x. Required by the
+	   QCA NSS hardware acceleration stack.
+
 config KERNEL_NF_CONNTRACK_TIMEOUT
 	bool "Per-connection connection tracking timeout"
 	default y if !SMALL_FLASH
 	help
 	   Select this option to enable support for per-connection conntrack timeouts.
 	   Increases the (uncompressed) size of nf_conntrack.ko by ~8kB.
+
+config KERNEL_NF_CONNTRACK_EVENTS
+	bool "Connection tracking events"
+	default y
+	help
+	   Deliver connection tracking events to notifier subscribers.
+	   Required by the QCA NSS ECM and by the chain events extension.
+
+config KERNEL_NF_CONNTRACK_CHAIN_EVENTS
+	bool "Register multiple callbacks to conntrack events"
+	depends on KERNEL_NF_CONNTRACK_EVENTS
+	default y if TARGET_ipq806x || TARGET_ipq_ipq806x
+	help
+	   Allow several subsystems to register for conntrack events at the
+	   same time. Required by the QCA NSS ECM.
+
+config KERNEL_NF_CONNTRACK_DSCPREMARK_EXT
+	bool "Connection tracking extension for DSCP remark"
+	depends on KERNEL_NF_CONNTRACK_EVENTS
+	default y if TARGET_ipq806x || TARGET_ipq_ipq806x
+	help
+	   Connection tracking extension that records the DSCP marking of a
+	   connection. Required by the QCA NSS ECM DSCP classifier so that
+	   the marking survives hardware acceleration.
 
 #
 # NFS related symbols

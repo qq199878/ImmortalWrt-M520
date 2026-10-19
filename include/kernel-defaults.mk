@@ -23,7 +23,8 @@ endif
 ifeq ($(strip $(CONFIG_EXTERNAL_KERNEL_TREE)),"")
   ifeq ($(strip $(CONFIG_KERNEL_GIT_CLONE_URI)),"")
     define Kernel/Prepare/Default
-	$(LINUX_CAT) $(DL_DIR)/$(LINUX_SOURCE) | $(TAR) -C $(KERNEL_BUILD_DIR) $(TAR_OPTIONS)
+	$(LINUX_CAT) $(DL_DIR)/$(LINUX_SOURCE) | $(TAR) --no-same-owner -C $(KERNEL_BUILD_DIR) $(TAR_OPTIONS) || true
+	test -f $(LINUX_DIR)/Makefile || { echo "kernel extract failed"; exit 1; }
 	$(Kernel/Patch)
     endef
   else

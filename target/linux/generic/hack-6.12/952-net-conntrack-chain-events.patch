@@ -1,0 +1,668 @@
+diff --git a/include/net/netfilter/nf_conntrack_dscpremark_ext.h b/include/net/netfilter/nf_conntrack_dscpremark_ext.h
+new file mode 100644
+index 000000000..de332f8c1
+--- /dev/null
++++ b/include/net/netfilter/nf_conntrack_dscpremark_ext.h
+@@ -0,0 +1,95 @@
++/* SPDX-License-Identifier: ISC */
++/*
++ * nf_conntrack_dscpremark_ext.h - conntrack extension for DSCP remark
++ *
++ * Backport of the QSDK private conntrack extension used by the QCA NSS
++ * ECM (Enhanced Connection Manager) DSCP classifier.
++ *
++ * The extension carries the per-direction QoS priority and DSCP value of a
++ * connection so that the NSS hardware offload path can preserve the DSCP
++ * marking that was applied in software by the iptables DSCP target.
++ */
++#ifndef _NF_CONNTRACK_DSCPREMARK_EXT_H
++#define _NF_CONNTRACK_DSCPREMARK_EXT_H
++
++#include <linux/types.h>
++#include <linux/skbuff.h>
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_extend.h>
++
++/*
++ * Validity of the DSCP remark rule for a connection.
++ */
++enum nf_ct_dscpremark_ext_rule_validity {
++	NF_CT_DSCPREMARK_EXT_RULE_INVALID = 0,
++	NF_CT_DSCPREMARK_EXT_RULE_VALID = 1,
++};
++
++/*
++ * Per-connection DSCP remark extension.
++ *
++ * flow_*  : direction from the connection originator to the responder
++ * reply_* : direction from the responder back to the originator
++ *
++ * priority mirrors skb->priority (the QoS mark), dscp is the 6 bit DSCP
++ * value extracted from the IP header.
++ */
++struct nf_ct_dscpremark_ext {
++	u32 flow_priority;
++	u32 reply_priority;
++	u8 flow_dscp;
++	u8 reply_dscp;
++	u8 rule_valid;
++};
++
++#ifdef CONFIG_NF_CONNTRACK_DSCPREMARK_EXT
++
++static inline struct nf_ct_dscpremark_ext *
++nf_ct_dscpremark_ext_find(const struct nf_conn *ct)
++{
++	return nf_ct_ext_find(ct, NF_CT_EXT_DSCPREMARK);
++}
++
++static inline struct nf_ct_dscpremark_ext *
++nf_ct_dscpremark_ext_add(struct nf_conn *ct, gfp_t gfp)
++{
++	struct nf_ct_dscpremark_ext *dscpcte;
++
++	dscpcte = nf_ct_ext_add(ct, NF_CT_EXT_DSCPREMARK, gfp);
++	return dscpcte;
++}
++
++extern int
++nf_conntrack_dscpremark_ext_get_dscp_rule_validity(const struct nf_conn *ct);
++
++extern void
++nf_conntrack_dscpremark_ext_set_dscp_rule_validity(struct nf_conn *ct, int valid);
++
++#else /* !CONFIG_NF_CONNTRACK_DSCPREMARK_EXT */
++
++static inline struct nf_ct_dscpremark_ext *
++nf_ct_dscpremark_ext_find(const struct nf_conn *ct)
++{
++	return NULL;
++}
++
++static inline struct nf_ct_dscpremark_ext *
++nf_ct_dscpremark_ext_add(struct nf_conn *ct, gfp_t gfp)
++{
++	return NULL;
++}
++
++static inline int
++nf_conntrack_dscpremark_ext_get_dscp_rule_validity(const struct nf_conn *ct)
++{
++	return NF_CT_DSCPREMARK_EXT_RULE_INVALID;
++}
++
++static inline void
++nf_conntrack_dscpremark_ext_set_dscp_rule_validity(struct nf_conn *ct, int valid)
++{
++}
++
++#endif /* CONFIG_NF_CONNTRACK_DSCPREMARK_EXT */
++
++#endif /* _NF_CONNTRACK_DSCPREMARK_EXT_H */
+\ No newline at end of file
+diff --git a/include/net/netfilter/nf_conntrack_ecache.h b/include/net/netfilter/nf_conntrack_ecache.h
+index 0c1dac318..f3619381d 100644
+--- a/include/net/netfilter/nf_conntrack_ecache.h
++++ b/include/net/netfilter/nf_conntrack_ecache.h
+@@ -60,6 +60,13 @@ struct nf_exp_event {
+ 	int report;
+ };
+ 
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++extern int nf_conntrack_register_notifier(struct net *net, struct notifier_block *nb);
++extern int nf_conntrack_unregister_notifier(struct net *net, struct notifier_block *nb);
++/* QCA NSS: ECM/SFE use the _chain_notifier naming */
++extern int nf_conntrack_register_chain_notifier(struct net *net, struct notifier_block *nb);
++extern int nf_conntrack_unregister_chain_notifier(struct net *net, struct notifier_block *nb);
++#else
+ struct nf_ct_event_notifier {
+ 	int (*ct_event)(unsigned int events, const struct nf_ct_event *item);
+ 	int (*exp_event)(unsigned int events, const struct nf_exp_event *item);
+@@ -68,6 +75,7 @@ struct nf_ct_event_notifier {
+ void nf_conntrack_register_notifier(struct net *net,
+ 				   const struct nf_ct_event_notifier *nb);
+ void nf_conntrack_unregister_notifier(struct net *net);
++#endif /* CONFIG_NF_CONNTRACK_CHAIN_EVENTS */
+ 
+ void nf_ct_deliver_cached_events(struct nf_conn *ct);
+ int nf_conntrack_eventmask_report(unsigned int eventmask, struct nf_conn *ct,
+@@ -98,12 +106,15 @@ static inline void
+ nf_conntrack_event_cache(enum ip_conntrack_events event, struct nf_conn *ct)
+ {
+ #ifdef CONFIG_NF_CONNTRACK_EVENTS
+-	struct net *net = nf_ct_net(ct);
+ 	struct nf_conntrack_ecache *e;
++#ifndef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++	struct net *net = nf_ct_net(ct);
+ 
+ 	if (!rcu_access_pointer(net->ct.nf_conntrack_event_cb))
+ 		return;
+ 
++#endif
++
+ 	e = nf_ct_ecache_find(ct);
+ 	if (e == NULL)
+ 		return;
+diff --git a/include/net/netfilter/nf_conntrack_extend.h b/include/net/netfilter/nf_conntrack_extend.h
+index 0b247248b..65ccaa465 100644
+--- a/include/net/netfilter/nf_conntrack_extend.h
++++ b/include/net/netfilter/nf_conntrack_extend.h
+@@ -31,6 +31,10 @@ enum nf_ct_ext_id {
+ #if IS_ENABLED(CONFIG_NET_ACT_CT)
+ 	NF_CT_EXT_ACT_CT,
+ #endif
++#ifdef CONFIG_NF_CONNTRACK_DSCPREMARK_EXT
++	NF_CT_EXT_DSCPREMARK,	/* QCA NSS ECM support */
++#endif
++
+ 	NF_CT_EXT_NUM,
+ };
+ 
+diff --git a/include/net/netns/conntrack.h b/include/net/netns/conntrack.h
+index bae914815..f5d64a998 100644
+--- a/include/net/netns/conntrack.h
++++ b/include/net/netns/conntrack.h
+@@ -104,7 +104,11 @@ struct netns_ct {
+ 	u8			sysctl_checksum;
+ 
+ 	struct ip_conntrack_stat __percpu *stat;
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++	struct atomic_notifier_head nf_conntrack_chain;
++#else
+ 	struct nf_ct_event_notifier __rcu *nf_conntrack_event_cb;
++#endif
+ 	struct nf_ip_net	nf_ct_proto;
+ #if defined(CONFIG_NF_CONNTRACK_LABELS)
+ 	atomic_t		labels_used;
+diff --git a/net/netfilter/Kconfig b/net/netfilter/Kconfig
+index df2dc2130..a54a4ff17 100644
+--- a/net/netfilter/Kconfig
++++ b/net/netfilter/Kconfig
+@@ -164,6 +164,25 @@ config NF_CONNTRACK_EVENTS
+ 
+ 	  If unsure, say `N'.
+ 
++config NF_CONNTRACK_CHAIN_EVENTS
++	bool "Register multiple callbacks to ct events"
++	depends on NF_CONNTRACK_EVENTS
++	help
++	  Support multiple registrations.
++
++	  If unsure, say `N'.
++
++config NF_CONNTRACK_DSCPREMARK_EXT
++	bool "Connection tracking extension for dscp remark target"
++	depends on NETFILTER_ADVANCED
++	help
++	  This option enables support for the connection tracking extension
++	  used by the iptables DSCP target to record the remarked DSCP value
++	  of a connection. Required by the QCA NSS ECM DSCP classifier so
++	  that the marking is preserved across hardware acceleration.
++
++	  If unsure, say `N'.
++
+ config NF_CONNTRACK_TIMEOUT
+ 	bool  'Connection tracking timeout'
+ 	depends on NETFILTER_ADVANCED
+diff --git a/net/netfilter/Makefile b/net/netfilter/Makefile
+index f0aa4d7ef..2d37d764e 100644
+--- a/net/netfilter/Makefile
++++ b/net/netfilter/Makefile
+@@ -15,6 +15,7 @@ nf_conntrack-$(CONFIG_NF_CONNTRACK_OVS) += nf_conntrack_ovs.o
+ nf_conntrack-$(CONFIG_NF_CT_PROTO_DCCP) += nf_conntrack_proto_dccp.o
+ nf_conntrack-$(CONFIG_NF_CT_PROTO_SCTP) += nf_conntrack_proto_sctp.o
+ nf_conntrack-$(CONFIG_NF_CT_PROTO_GRE) += nf_conntrack_proto_gre.o
++nf_conntrack-$(CONFIG_NF_CONNTRACK_DSCPREMARK_EXT) += nf_conntrack_dscpremark_ext.o
+ ifeq ($(CONFIG_NF_CONNTRACK),m)
+ nf_conntrack-$(CONFIG_DEBUG_INFO_BTF_MODULES) += nf_conntrack_bpf.o
+ else ifeq ($(CONFIG_NF_CONNTRACK),y)
+diff --git a/net/netfilter/nf_conntrack_core.c b/net/netfilter/nf_conntrack_core.c
+index f5bde4f13..872a04c39 100644
+--- a/net/netfilter/nf_conntrack_core.c
++++ b/net/netfilter/nf_conntrack_core.c
+@@ -2766,7 +2766,10 @@ int nf_conntrack_init_net(struct net *net)
+ 	nf_conntrack_tstamp_pernet_init(net);
+ 	nf_conntrack_ecache_pernet_init(net);
+ 	nf_conntrack_proto_pernet_init(net);
+-
++	
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++	ATOMIC_INIT_NOTIFIER_HEAD(&net->ct.nf_conntrack_chain);
++#endif
+ 	return 0;
+ 
+ err_expect:
+diff --git a/net/netfilter/nf_conntrack_dscpremark_ext.c b/net/netfilter/nf_conntrack_dscpremark_ext.c
+new file mode 100644
+index 000000000..fdb239a78
+--- /dev/null
++++ b/net/netfilter/nf_conntrack_dscpremark_ext.c
+@@ -0,0 +1,60 @@
++// SPDX-License-Identifier: ISC
++/*
++ * nf_conntrack_dscpremark_ext.c - conntrack extension for DSCP remark
++ *
++ * Backport of the QSDK private conntrack extension consumed by the QCA NSS
++ * ECM DSCP classifier.
++ *
++ * The extension is attached to a conntrack entry when the iptables DSCP
++ * target marks a flow. The NSS ECM classifier reads it back and programs
++ * the hardware offload path so the DSCP marking survives acceleration.
++ */
++#include <linux/skbuff.h>
++#include <linux/types.h>
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_extend.h>
++#include <net/netfilter/nf_conntrack_dscpremark_ext.h>
++
++/*
++ * nf_conntrack_dscpremark_ext_get_dscp_rule_validity()
++ *	Return whether a DSCP remark rule is valid for this connection.
++ */
++int nf_conntrack_dscpremark_ext_get_dscp_rule_validity(const struct nf_conn *ct)
++{
++	struct nf_ct_dscpremark_ext *dscpcte;
++
++	if (!ct)
++		return NF_CT_DSCPREMARK_EXT_RULE_INVALID;
++
++	dscpcte = nf_ct_dscpremark_ext_find(ct);
++	if (!dscpcte)
++		return NF_CT_DSCPREMARK_EXT_RULE_INVALID;
++
++	return dscpcte->rule_valid ? NF_CT_DSCPREMARK_EXT_RULE_VALID :
++				     NF_CT_DSCPREMARK_EXT_RULE_INVALID;
++}
++EXPORT_SYMBOL_GPL(nf_conntrack_dscpremark_ext_get_dscp_rule_validity);
++
++/*
++ * nf_conntrack_dscpremark_ext_set_dscp_rule_validity()
++ *	Mark the DSCP remark rule of this connection as valid or not.
++ */
++void nf_conntrack_dscpremark_ext_set_dscp_rule_validity(struct nf_conn *ct, int valid)
++{
++	struct nf_ct_dscpremark_ext *dscpcte;
++
++	if (!ct)
++		return;
++
++	dscpcte = nf_ct_dscpremark_ext_find(ct);
++	if (!dscpcte)
++		return;
++
++	dscpcte->rule_valid = valid ? 1 : 0;
++}
++EXPORT_SYMBOL_GPL(nf_conntrack_dscpremark_ext_set_dscp_rule_validity);
++
++/*
++ * This file is linked into the nf_conntrack.o composite module, so it must
++ * not declare its own module_init/module_exit entry points.
++ */
+diff --git a/net/netfilter/nf_conntrack_ecache.c b/net/netfilter/nf_conntrack_ecache.c
+index 69948e1d6..a86cae5a5 100644
+--- a/net/netfilter/nf_conntrack_ecache.c
++++ b/net/netfilter/nf_conntrack_ecache.c
+@@ -124,6 +124,39 @@ static void ecache_work(struct work_struct *work)
+ 		schedule_delayed_work(&cnet->ecache.dwork, delay);
+ }
+ 
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++int nf_conntrack_eventmask_report(unsigned int events, struct nf_conn *ct,
++				  u32 portid, int report)
++{
++	struct nf_conntrack_ecache *e;
++	struct nf_ct_event item;
++	unsigned int missed;
++
++	if (!nf_ct_is_confirmed(ct))
++		return 0;
++
++	e = nf_ct_ecache_find(ct);
++	if (!e)
++		return 0;
++
++	memset(&item, 0, sizeof(item));
++
++	item.ct = ct;
++	item.portid = e->portid ? e->portid : portid;
++	item.report = report;
++
++	/* This is a resent of a destroy event? If so, skip missed */
++	missed = e->portid ? 0 : e->missed;
++
++	if (!((events | missed) & e->ctmask))
++		return 0;
++
++	atomic_notifier_call_chain(&nf_ct_net(ct)->ct.nf_conntrack_chain,
++				   events | missed, &item);
++
++	return 0;
++}
++#else
+ static int __nf_conntrack_eventmask_report(struct nf_conntrack_ecache *e,
+ 					   const u32 events,
+ 					   const u32 missed,
+@@ -197,10 +230,52 @@ int nf_conntrack_eventmask_report(unsigned int events, struct nf_conn *ct,
+ 
+ 	return ret;
+ }
++#endif /* CONFIG_NF_CONNTRACK_CHAIN_EVENTS */
+ EXPORT_SYMBOL_GPL(nf_conntrack_eventmask_report);
+ 
+ /* deliver cached events and clear cache entry - must be called with locally
+  * disabled softirqs */
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++void nf_ct_deliver_cached_events(struct nf_conn *ct)
++{
++	unsigned long events, missed;
++	struct nf_conntrack_ecache *e;
++	struct nf_ct_event item;
++	struct net *net = nf_ct_net(ct);
++
++	e = nf_ct_ecache_find(ct);
++	if (e == NULL)
++		return;
++
++	events = xchg(&e->cache, 0);
++
++	if (!nf_ct_is_confirmed(ct) || nf_ct_is_dying(ct) || !events)
++		return;
++
++	/* We make a copy of the missed event cache without taking
++	 * the lock, thus we may send missed events twice. However,
++	 * this does not harm and it happens very rarely. */
++	missed = e->missed;
++
++	if (!((events | missed) & e->ctmask))
++		return;
++
++	item.ct = ct;
++	item.portid = 0;
++	item.report = 0;
++
++	atomic_notifier_call_chain(&net->ct.nf_conntrack_chain,
++			events | missed,
++			&item);
++
++	if (likely(!missed))
++		return;
++
++	spin_lock_bh(&ct->lock);
++		e->missed &= ~missed;
++	spin_unlock_bh(&ct->lock);
++}
++#else
+ void nf_ct_deliver_cached_events(struct nf_conn *ct)
+ {
+ 	struct nf_conntrack_ecache *e;
+@@ -226,6 +301,7 @@ void nf_ct_deliver_cached_events(struct nf_conn *ct)
+ 	 */
+ 	__nf_conntrack_eventmask_report(e, events, e->missed, &item);
+ }
++#endif
+ EXPORT_SYMBOL_GPL(nf_ct_deliver_cached_events);
+ 
+ void nf_ct_expect_event_report(enum ip_conntrack_expect_events event,
+@@ -233,6 +309,13 @@ void nf_ct_expect_event_report(enum ip_conntrack_expect_events event,
+ 			       u32 portid, int report)
+ 
+ {
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++	/*
++	 * CHAIN_EVENTS 模式：nf_conntrack_event_cb 不存在，
++	 * exp_event 回调也不再支持，直接返回。
++	 */
++	return;
++#else
+ 	struct net *net = nf_ct_exp_net(exp);
+ 	struct nf_ct_event_notifier *notify;
+ 	struct nf_conntrack_ecache *e;
+@@ -256,8 +339,33 @@ void nf_ct_expect_event_report(enum ip_conntrack_expect_events event,
+ 	}
+ out_unlock:
+ 	rcu_read_unlock();
++#endif /* CONFIG_NF_CONNTRACK_CHAIN_EVENTS */
+ }
+ 
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++int nf_conntrack_register_notifier(struct net *net, struct notifier_block *nb)
++{
++	return atomic_notifier_chain_register(&net->ct.nf_conntrack_chain, nb);
++}
++EXPORT_SYMBOL_GPL(nf_conntrack_register_notifier);
++
++int nf_conntrack_unregister_notifier(struct net *net, struct notifier_block *nb)
++{
++	return atomic_notifier_chain_unregister(&net->ct.nf_conntrack_chain, nb);
++}
++EXPORT_SYMBOL_GPL(nf_conntrack_unregister_notifier);
++/* QCA NSS: ECM/SFE use the _chain_notifier naming */
++int nf_conntrack_register_chain_notifier(struct net *net, struct notifier_block *nb)
++{
++	return atomic_notifier_chain_register(&net->ct.nf_conntrack_chain, nb);
++}
++EXPORT_SYMBOL_GPL(nf_conntrack_register_chain_notifier);
++int nf_conntrack_unregister_chain_notifier(struct net *net, struct notifier_block *nb)
++{
++	return atomic_notifier_chain_unregister(&net->ct.nf_conntrack_chain, nb);
++}
++EXPORT_SYMBOL_GPL(nf_conntrack_unregister_chain_notifier);
++#else
+ void nf_conntrack_register_notifier(struct net *net,
+ 				    const struct nf_ct_event_notifier *new)
+ {
+@@ -280,6 +388,7 @@ void nf_conntrack_unregister_notifier(struct net *net)
+ 	/* synchronize_rcu() is called after netns pre_exit */
+ }
+ EXPORT_SYMBOL_GPL(nf_conntrack_unregister_notifier);
++#endif /* CONFIG_NF_CONNTRACK_CHAIN_EVENTS */
+ 
+ void nf_conntrack_ecache_work(struct net *net, enum nf_ct_ecache_state state)
+ {
+diff --git a/net/netfilter/nf_conntrack_extend.c b/net/netfilter/nf_conntrack_extend.c
+index dd62cc12e..fe147549a 100644
+--- a/net/netfilter/nf_conntrack_extend.c
++++ b/net/netfilter/nf_conntrack_extend.c
+@@ -23,6 +23,7 @@
+ #include <net/netfilter/nf_conntrack_labels.h>
+ #include <net/netfilter/nf_conntrack_synproxy.h>
+ #include <net/netfilter/nf_conntrack_act_ct.h>
++#include <net/netfilter/nf_conntrack_dscpremark_ext.h>
+ #include <net/netfilter/nf_nat.h>
+ 
+ #define NF_CT_EXT_PREALLOC	128u /* conntrack events are on by default */
+@@ -54,12 +55,15 @@ static const u8 nf_ct_ext_type_len[NF_CT_EXT_NUM] = {
+ #if IS_ENABLED(CONFIG_NET_ACT_CT)
+ 	[NF_CT_EXT_ACT_CT] = sizeof(struct nf_conn_act_ct_ext),
+ #endif
++#ifdef CONFIG_NF_CONNTRACK_DSCPREMARK_EXT
++	[NF_CT_EXT_DSCPREMARK] = sizeof(struct nf_ct_dscpremark_ext),
++#endif
+ };
+ 
+ static __always_inline unsigned int total_extension_size(void)
+ {
+ 	/* remember to add new extensions below */
+-	BUILD_BUG_ON(NF_CT_EXT_NUM > 10);
++	BUILD_BUG_ON(NF_CT_EXT_NUM > 12);
+ 
+ 	return sizeof(struct nf_ct_ext) +
+ 	       sizeof(struct nf_conn_help)
+@@ -85,6 +89,9 @@ static __always_inline unsigned int total_extension_size(void)
+ #endif
+ #if IS_ENABLED(CONFIG_NET_ACT_CT)
+ 		+ sizeof(struct nf_conn_act_ct_ext)
++#endif
++#ifdef CONFIG_NF_CONNTRACK_DSCPREMARK_EXT
++		+ sizeof(struct nf_ct_dscpremark_ext)
+ #endif
+ 	;
+ }
+diff --git a/net/netfilter/nf_conntrack_netlink.c b/net/netfilter/nf_conntrack_netlink.c
+index f51cdfba6..18483c6aa 100644
+--- a/net/netfilter/nf_conntrack_netlink.c
++++ b/net/netfilter/nf_conntrack_netlink.c
+@@ -28,6 +28,11 @@
+ #include <linux/netlink.h>
+ #include <linux/spinlock.h>
+ #include <linux/interrupt.h>
++
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++#include <linux/notifier.h>
++#endif
++
+ #include <linux/slab.h>
+ #include <linux/siphash.h>
+ 
+@@ -721,8 +726,16 @@ static size_t ctnetlink_nlmsg_size(const struct nf_conn *ct)
+ }
+ 
+ static int
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++ctnetlink_conntrack_event(struct notifier_block *this, unsigned long events,
++			  void *ptr)
++#else
+ ctnetlink_conntrack_event(unsigned int events, const struct nf_ct_event *item)
++#endif
+ {
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++	const struct nf_ct_event *item = (const struct nf_ct_event *)ptr;
++#endif
+ 	const struct nf_conntrack_zone *zone;
+ 	struct net *net;
+ 	struct nlmsghdr *nlh;
+@@ -3077,6 +3090,7 @@ ctnetlink_exp_fill_info(struct sk_buff *skb, u32 portid, u32 seq,
+ }
+ 
+ #ifdef CONFIG_NF_CONNTRACK_EVENTS
++#ifndef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
+ static int
+ ctnetlink_expect_event(unsigned int events, const struct nf_exp_event *item)
+ {
+@@ -3125,6 +3139,7 @@ ctnetlink_expect_event(unsigned int events, const struct nf_exp_event *item)
+ 	nfnetlink_set_err(net, 0, 0, -ENOBUFS);
+ 	return 0;
+ }
++#endif /* CONFIG_NF_CONNTRACK_CHAIN_EVENTS */
+ #endif
+ 
+ static unsigned long ctnetlink_exp_id(const struct nf_conntrack_expect *exp)
+@@ -3738,11 +3753,17 @@ static int ctnetlink_stat_exp_cpu(struct sk_buff *skb,
+ }
+ 
+ #ifdef CONFIG_NF_CONNTRACK_EVENTS
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++static struct notifier_block ctnl_notifier_chain = {
++	.notifier_call = ctnetlink_conntrack_event,
++};
++#else
+ static struct nf_ct_event_notifier ctnl_notifier = {
+ 	.ct_event = ctnetlink_conntrack_event,
+ 	.exp_event = ctnetlink_expect_event,
+ };
+ #endif
++#endif
+ 
+ static const struct nfnl_callback ctnl_cb[IPCTNL_MSG_MAX] = {
+ 	[IPCTNL_MSG_CT_NEW]	= {
+@@ -3833,7 +3854,11 @@ MODULE_ALIAS_NFNL_SUBSYS(NFNL_SUBSYS_CTNETLINK_EXP);
+ static int __net_init ctnetlink_net_init(struct net *net)
+ {
+ #ifdef CONFIG_NF_CONNTRACK_EVENTS
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++	nf_conntrack_register_notifier(net, &ctnl_notifier_chain);
++#else
+ 	nf_conntrack_register_notifier(net, &ctnl_notifier);
++#endif
+ #endif
+ 	return 0;
+ }
+@@ -3841,8 +3866,12 @@ static int __net_init ctnetlink_net_init(struct net *net)
+ static void ctnetlink_net_pre_exit(struct net *net)
+ {
+ #ifdef CONFIG_NF_CONNTRACK_EVENTS
++#ifdef CONFIG_NF_CONNTRACK_CHAIN_EVENTS
++	nf_conntrack_unregister_notifier(net, &ctnl_notifier_chain);
++#else
+ 	nf_conntrack_unregister_notifier(net);
+ #endif
++#endif
+ }
+ 
+ static struct pernet_operations ctnetlink_net_ops = {
+diff --git a/net/netfilter/xt_DSCP.c b/net/netfilter/xt_DSCP.c
+index cfa44515a..c4cfea3a5 100644
+--- a/net/netfilter/xt_DSCP.c
++++ b/net/netfilter/xt_DSCP.c
+@@ -15,6 +15,8 @@
+ 
+ #include <linux/netfilter/x_tables.h>
+ #include <linux/netfilter/xt_DSCP.h>
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_dscpremark_ext.h>
+ 
+ MODULE_AUTHOR("Harald Welte <laforge@netfilter.org>");
+ MODULE_DESCRIPTION("Xtables: DSCP/TOS field modification");
+@@ -26,6 +28,46 @@ MODULE_ALIAS("ip6t_TOS");
+ 
+ #define XT_DSCP_ECN_MASK	3u
+ 
++/*
++ * Record the DSCP marking of this connection into the conntrack
++ * DSCPREMARK extension so that the QCA NSS ECM DSCP classifier can
++ * preserve it across hardware acceleration.
++ */
++static void dscp_tg_ct_record(struct sk_buff *skb, u_int8_t dscp)
++{
++#ifdef CONFIG_NF_CONNTRACK_DSCPREMARK_EXT
++	struct nf_ct_dscpremark_ext *dscpcte;
++	enum ip_conntrack_info ctinfo;
++	struct nf_conn *ct;
++	bool src;
++
++	ct = nf_ct_get(skb, &ctinfo);
++	if (!ct)
++		return;
++
++	dscpcte = nf_ct_dscpremark_ext_find(ct);
++	if (!dscpcte) {
++		dscpcte = nf_ct_dscpremark_ext_add(ct, GFP_ATOMIC);
++		if (!dscpcte)
++			return;
++	}
++
++	src = (ctinfo == IP_CT_NEW || ctinfo == IP_CT_RELATED ||
++	       ctinfo == IP_CT_RELATED_REPLY ||
++	       (ctinfo & IP_CT_IS_REPLY) == 0);
++
++	if (src) {
++		dscpcte->flow_dscp = dscp;
++		dscpcte->flow_priority = skb->priority;
++	} else {
++		dscpcte->reply_dscp = dscp;
++		dscpcte->reply_priority = skb->priority;
++	}
++
++	dscpcte->rule_valid = 1;
++#endif
++}
++
+ static unsigned int
+ dscp_tg(struct sk_buff *skb, const struct xt_action_param *par)
+ {
+@@ -40,6 +82,7 @@ dscp_tg(struct sk_buff *skb, const struct xt_action_param *par)
+ 				    dinfo->dscp << XT_DSCP_SHIFT);
+ 
+ 	}
++	dscp_tg_ct_record(skb, dinfo->dscp);
+ 	return XT_CONTINUE;
+ }
+ 
+@@ -56,6 +99,7 @@ dscp_tg6(struct sk_buff *skb, const struct xt_action_param *par)
+ 		ipv6_change_dsfield(ipv6_hdr(skb), XT_DSCP_ECN_MASK,
+ 				    dinfo->dscp << XT_DSCP_SHIFT);
+ 	}
++	dscp_tg_ct_record(skb, dinfo->dscp);
+ 	return XT_CONTINUE;
+ }
+ 

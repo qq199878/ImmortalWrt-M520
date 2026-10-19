@@ -6,7 +6,7 @@ on:
       config_file:
         description: 'configs/ 下的配置文件'
         required: false
-        default: 'm520.config'
+        default: 'm520-nss.config'
       target_pkg:
         description: '只编译指定包（留空=全量编译）'
         required: false
@@ -74,7 +74,7 @@ jobs:
           # 容错：允许用户填 m520-nss.config 或 configs/m520-nss.config
           NAME="$RAW"
           if [ -z "$NAME" ]; then
-            NAME="m520.config"
+            NAME="m520-nss.config"
           fi
           NAME="${NAME#configs/}"
           CFG="configs/$NAME"

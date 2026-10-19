@@ -541,7 +541,8 @@ define Device/ruijie_rg-mtfi-m520
 	IMAGE/sysupgrade.bin/squashfs := append-rootfs | pad-to $$$$(BLOCKSIZE) | sysupgrade-tar rootfs=$$$$@ | append-metadata
 	DEVICE_PACKAGES := -kmod-ath10k-ct kmod-ath10k ath10k-firmware-qca988x \
 		kmod-hwmon-lm75 kmod-rtc-pcf8563 kmod-ramoops uboot-envtools \
-		kmod-fs-f2fs losetup mkf2fs
+		kmod-fs-f2fs losetup mkf2fs \
+		kmod-qca-nss-gmac kmod-qca-nss-drv kmod-qca-nss-ecm-standard
 endef
 TARGET_DEVICES += ruijie_rg-mtfi-m520
 
