@@ -508,6 +508,25 @@
 	};
 };
 
+/*
+ * NSS GMAC common node (required by qca-nss-gmac)
+ * reg[0] NSS GMAC regs 0x03000000
+ * reg[1] QSGMII regs   0x1bb00000
+ * reg[2] clk control   0x00900000
+ */
+&{/} {
+	nss-gmac-common {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		reg = <0x03000000 0x0000FFFF>,
+		      <0x1bb00000 0x0000FFFF>,
+		      <0x00900000 0x00004000>;
+	};
+};
+
 &gmac1 {
 	status = "okay";
 	device_type = "network";
