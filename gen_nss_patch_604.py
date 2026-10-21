@@ -141,10 +141,10 @@ MAP = [
 ]
 
 
-def build_block(indent, expr, ret):
+def build_block(indent, expr, ret, fname=''):
     """生成替换代码块
 
-    对带资源清理的函数（信号量/互斥锁/描述符/DMA 内存），
+    对带资源清理的函数（信号量/互斥锁/描述符/DMA 内存/skb），
     返回值不能直接 return，必须先释放资源再返回。
     """
     if expr in ('false', '0'):
@@ -176,6 +176,12 @@ def build_block(indent, expr, ret):
     elif 'nr_frags > MAX_SKB_FRAGS' in expr:
         body += '%s\tnss_core_send_unwind_dma(nss_ctx->dev, desc_if, hlos_index, 1, is_fraglist);\n' % indent
         body += '%s\treturn -1;\n' % indent
+    # 5) nss_tstamp.c: 已接管 skb，失败必须 free 标签释放
+    elif '!n2h_hdr' in expr or '!nss_ctx' in expr:
+        if 'tstamp' in fname:
+            body += '%s\tgoto free;\n' % indent
+        else:
+            body += '%s\t%s\n' % (indent, ret)
     else:
         body += '%s\t%s\n' % (indent, ret)
 
@@ -256,7 +262,7 @@ def main():
 
             expr = s[len('BUG_ON('):-2].strip()
 
-            block = build_block(indent, expr, ret)
+            block = build_block(indent, expr, ret, fname=name)
             # 用 block 替换 i..i+span-1 这几行
             lines[i:i + span] = [block]
             ok += 1
