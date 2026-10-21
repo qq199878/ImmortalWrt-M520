@@ -1,0 +1,21 @@
+--- a/ecm_types.h	2019-09-20 20:22:51.000000000 +0800
++++ b/ecm_types.h	2026-10-22 01:39:26.148501682 +0800
+@@ -413,7 +413,17 @@
+ #define DEBUG_CLEAR_MAGIC(i)
+ #define DEBUG_ECM_IP_ADDR_TO_STRING(addr_str, addr)
+ #else
+-#define DEBUG_ASSERT(c, s, ...) if (!(c)) { pr_emerg("ASSERT: %s:%d:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__); BUG(); }
++/*
++ * 断言不 panic 版本
++ *
++ * 原实现在 DEBUG_LEVEL >= 1 时展开为 BUG()，ECM 内共 506 处调用，
++ * 多为运行时数据校验（链表完整性、计数器非负等）。一旦命中即内核
++ * panic 并无限重启，且无法远程诊断。
++ *
++ * 改为只打印：记录函数名、行号、原始信息，然后继续执行。
++ * 断言失败仍会留下完整上下文，但不会把设备变砖。
++ */
++#define DEBUG_ASSERT(c, s, ...) if (unlikely(!(c))) { pr_emerg("ASSERT_NOPANIC: %s:%d:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__); }
+ #define DEBUG_ERROR(s, ...) pr_err("%s:%d:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+ #define DEBUG_CHECK_MAGIC(i, m, s, ...) if (i->magic != m) { DEBUG_ASSERT(false, s, ##__VA_ARGS__); }
+ #define DEBUG_SET_MAGIC(i, m) i->magic = m
