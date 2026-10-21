@@ -203,7 +203,7 @@ diff --git a/nss_n2h.c b/nss_n2h.c
  	 */
 -	nss_n2h_dir[0].child = nss_n2h_table_single_core;
 -	nss_n2h_header = register_sysctl_table(nss_n2h_root);
-+	nss_n2h_header = register_sysctl("dev/nss/n2h", nss_n2h_table_single_core);
++	nss_n2h_header = register_sysctl_sz("dev/nss/n2h", nss_n2h_table_single_core, ARRAY_SIZE(nss_n2h_table_single_core) - 1);
  }
  
  /*
@@ -212,7 +212,7 @@ diff --git a/nss_n2h.c b/nss_n2h.c
  	 * Register sysctl table.
  	 */
 -	nss_n2h_header = register_sysctl_table(nss_n2h_root);
-+	nss_n2h_header = register_sysctl("dev/nss/n2h", nss_n2h_table_single_core);
++	nss_n2h_header = register_sysctl_sz("dev/nss/n2h", nss_n2h_table_single_core, ARRAY_SIZE(nss_n2h_table_single_core) - 1);
  }
  
  /*
@@ -276,7 +276,7 @@ diff --git a/nss_ipv6.c b/nss_ipv6.c
  	 * Register sysctl table.
  	 */
 -	nss_ipv6_header = register_sysctl_table(nss_ipv6_root);
-+	nss_ipv6_header = register_sysctl("dev/nss/ipv6", nss_ipv6_table);
++	nss_ipv6_header = register_sysctl_sz("dev/nss/ipv6", nss_ipv6_table, ARRAY_SIZE(nss_ipv6_table) - 1);
  }
  
  /*
@@ -340,7 +340,7 @@ diff --git a/nss_ipv4.c b/nss_ipv4.c
  	 * Register sysctl table.
  	 */
 -	nss_ipv4_header = register_sysctl_table(nss_ipv4_root);
-+	nss_ipv4_header = register_sysctl("dev/nss/ipv4", nss_ipv4_table);
++	nss_ipv4_header = register_sysctl_sz("dev/nss/ipv4", nss_ipv4_table, ARRAY_SIZE(nss_ipv4_table) - 1);
  }
  
  /*
@@ -407,7 +407,7 @@ diff --git a/nss_project.c b/nss_project.c
  void nss_project_register_sysctl(void)
  {
 -	nss_project_header = register_sysctl_table(nss_project_root);
-+	nss_project_header = register_sysctl("dev/nss/project", nss_project_table);
++	nss_project_header = register_sysctl_sz("dev/nss/project", nss_project_table, ARRAY_SIZE(nss_project_table) - 1);
  }
  
  /*
@@ -504,7 +504,7 @@ diff --git a/nss_rps.c b/nss_rps.c
  	 * Register sysctl table.
  	 */
 -	nss_rps_header = register_sysctl_table(nss_rps_root);
-+	nss_rps_header = register_sysctl("dev/nss/rps", nss_rps_table);
++	nss_rps_header = register_sysctl_sz("dev/nss/rps", nss_rps_table, ARRAY_SIZE(nss_rps_table) - 1);
  }
  
  /*
@@ -584,7 +584,7 @@ diff --git a/nss_c2c_tx.c b/nss_c2c_tx.c
  	 * Register sysctl table.
  	 */
 -	nss_c2c_tx_header = register_sysctl_table(nss_c2c_tx_root);
-+	nss_c2c_tx_header = register_sysctl("dev/nss/c2c_tx", nss_c2c_tx_table);
++	nss_c2c_tx_header = register_sysctl_sz("dev/nss/c2c_tx", nss_c2c_tx_table, ARRAY_SIZE(nss_c2c_tx_table) - 1);
  }
  
  /*
@@ -791,11 +791,11 @@ diff --git a/nss_init.c b/nss_init.c
  	 * Register sysctl table.
  	 */
 -	nss_dev_header = register_sysctl_table(nss_root);
-+	nss_dev_header = register_sysctl("dev/nss/clock", nss_freq_table);
++	nss_dev_header = register_sysctl_sz("dev/nss/clock", nss_freq_table, ARRAY_SIZE(nss_freq_table) - 1);
 +#if (NSS_SKB_REUSE_SUPPORT == 1)
-+	nss_skb_reuse_header = register_sysctl("dev/nss/skb_reuse", nss_skb_reuse_table);
++	nss_skb_reuse_header = register_sysctl_sz("dev/nss/skb_reuse", nss_skb_reuse_table, ARRAY_SIZE(nss_skb_reuse_table) - 1);
 +#endif
-+	nss_general_header = register_sysctl("dev/nss/general", nss_general_table);
++	nss_general_header = register_sysctl_sz("dev/nss/general", nss_general_table, ARRAY_SIZE(nss_general_table) - 1);
  
  	/*
  	 * Registering sysctl for ipv4/6 specific config.

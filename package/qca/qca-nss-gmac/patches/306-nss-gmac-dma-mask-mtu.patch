@@ -1,0 +1,35 @@
+--- a/ipq806x/nss_gmac_ctrl.c	2026-10-20 18:33:31.811208703 +0800
++++ b/ipq806x/nss_gmac_ctrl.c	2026-10-20 18:33:26.074961371 +0800
+@@ -36,6 +36,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/workqueue.h>
+ #include <linux/phy.h>
++#include <linux/dma-mapping.h>
+ #include <linux/net_tstamp.h>
+ #include <linux/sysctl.h>
+ #include <net/net_namespace.h>
+@@ -1426,6 +1427,24 @@
+ 	set_bit(__NSS_GMAC_RXCSUM, &gmacdev->flags);
+ 	nss_gmac_ipc_offload_init(gmacdev);
+ 
++	/*
++	 * alloc_etherdev()/ether_setup() leave netdev->dev without a
++	 * streaming DMA mask. dma_map_single() then warns in
++	 * dma_map_page_attrs() and returns DMA_MAPPING_ERROR, which the
++	 * slowpath RX refill writes straight into the descriptor and the
++	 * DMA engine chokes on. NSS GMAC is a 32-bit DMA master, so
++	 * derive the streaming mask from the coherent mask here.
++	 */
++	if (!netdev->dev.dma_mask)
++		dma_coerce_mask_and_coherent(&netdev->dev, DMA_BIT_MASK(32));
++
++	/*
++	 * ether_setup() pins max_mtu to ETH_DATA_LEN, so DSA cannot raise
++	 * the conduit MTU to carry its tag (1502) and the slave ports stay
++	 * down. The driver itself accepts up to NSS_GMAC_JUMBO_MTU.
++	 */
++	netdev->max_mtu = NSS_GMAC_JUMBO_MTU;
++
+ 	/* Register the network interface */
+ 	if (register_netdev(netdev)) {
+ 		netdev_dbg(netdev, "Error registering netdevice %s\n",

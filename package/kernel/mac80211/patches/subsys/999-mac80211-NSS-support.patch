@@ -1,0 +1,299 @@
+--- a/local-symbols
++++ b/local-symbols
+@@ -24,10 +24,11 @@
+ CFG80211_DEBUGFS=
+ CFG80211_CRDA_SUPPORT=
+ CFG80211_WEXT=
+ CFG80211_KUNIT_TEST=
+ MAC80211=
++MAC80211_NSS_SUPPORT=
+ MAC80211_HAS_RC=
+ MAC80211_RC_MINSTREL=
+ MAC80211_RC_DEFAULT_MINSTREL=
+ MAC80211_RC_DEFAULT=
+ MAC80211_KUNIT_TEST=
+--- a/net/mac80211/Kconfig
++++ b/net/mac80211/Kconfig
+@@ -17,10 +17,16 @@
+ comment "CFG80211 needs to be enabled for MAC80211"
+ 	depends on CFG80211=n
+ 
+ if MAC80211 != n
+ 
++config MAC80211_NSS_SUPPORT
++	bool "Enable NSS support for IPQ platform"
++	default n
++	help
++	  Enable the NSS virtual-interface bridge used by IPQ platforms.
++
+ config MAC80211_HAS_RC
+ 	bool
+ 
+ config MAC80211_RC_MINSTREL
+ 	bool "Minstrel" if EXPERT
+--- a/net/mac80211/ieee80211_i.h
++++ b/net/mac80211/ieee80211_i.h
+@@ -35,10 +35,14 @@
+ #include "sta_info.h"
+ #include "debug.h"
+ #include "drop.h"
+ 
+ extern const struct cfg80211_ops mac80211_config_ops;
++
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++#include <nss_api_if.h>
++#endif
+ 
+ struct ieee80211_local;
+ struct ieee80211_mesh_fast_tx;
+ 
+ /* Maximum number of broadcast/multicast frames to buffer when some of the
+@@ -1219,10 +1223,15 @@
+ 		struct dentry *default_beacon_key;
+ 	} debugfs;
+ #endif
+ 
+ 	u32 tx_handlers_drop;
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++	struct nss_virt_if_handle *nssctx;
++	struct sk_buff_head rx_queue;
++	struct work_struct rx_work;
++#endif
+ 	/* must be last, dynamically sized area in this! */
+ 	struct ieee80211_vif vif;
+ };
+ 
+ static inline
+--- a/net/mac80211/iface.c
++++ b/net/mac80211/iface.c
+@@ -488,10 +488,20 @@
+ 	lockdep_assert_wiphy(local->hw.wiphy);
+ 
+ 	clear_bit(SDATA_STATE_RUNNING, &sdata->state);
+ 	synchronize_rcu(); /* flush _ieee80211_wake_txqs() */
+ 
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++	if (sdata->nssctx) {
++		cancel_work_sync(&sdata->rx_work);
++		skb_queue_purge(&sdata->rx_queue);
++		nss_virt_if_destroy_sync(sdata->nssctx);
++		sdata->nssctx = NULL;
++		sdata_info(sdata, "Destroyed NSS virtual interface\n");
++	}
++#endif
++
+ 	cancel_scan = rcu_access_pointer(local->scan_sdata) == sdata;
+ 	if (cancel_scan)
+ 		ieee80211_scan_cancel(local);
+ 
+ 	ieee80211_roc_purge(local, sdata);
+@@ -1278,10 +1288,80 @@
+ 	synchronize_net();
+ 
+ 	kfree(sdata);
+ }
+ 
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++#define MAC80211_NSS_CASE_STRING(value) case value: return #value
++
++static const char *mac80211_nss_tx_status_name(nss_tx_status_t status)
++{
++	switch (status) {
++		MAC80211_NSS_CASE_STRING(NSS_TX_SUCCESS);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_QUEUE);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_NOT_READY);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_TOO_LARGE);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_TOO_SHORT);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_NOT_SUPPORTED);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_BAD_PARAM);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_NOT_ENABLED);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_SYNC_BAD_PARAM);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_SYNC_TIMEOUT);
++		MAC80211_NSS_CASE_STRING(NSS_TX_FAILURE_SYNC_FW_ERR);
++	default:
++		return "Unknown NSS TX status";
++	}
++}
++
++static void mac80211_nss_rx_work(struct work_struct *work)
++{
++	struct ieee80211_sub_if_data *sdata =
++		container_of(work, struct ieee80211_sub_if_data, rx_work);
++	struct sk_buff *skb;
++
++	while ((skb = skb_dequeue(&sdata->rx_queue))) {
++		nss_tx_status_t status;
++
++		skb_push(skb, ETH_HLEN);
++		status = nss_virt_if_tx_buf(sdata->nssctx, skb);
++		if (unlikely(status != NSS_TX_SUCCESS)) {
++			if (net_ratelimit() && status != NSS_TX_FAILURE_TOO_SHORT)
++				sdata_err(sdata, "NSS TX failed: %s\n",
++					mac80211_nss_tx_status_name(status));
++			skb_pull(skb, ETH_HLEN);
++			netif_receive_skb(skb);
++		}
++	}
++
++	if (!skb_queue_empty(&sdata->rx_queue))
++		schedule_work(&sdata->rx_work);
++}
++
++static void mac80211_nss_receive(struct net_device *dev,
++					struct sk_buff *skb,
++					struct napi_struct *napi)
++{
++	struct ieee80211_sub_if_data *sdata;
++
++	if (!dev || !skb || !napi) {
++		kfree_skb(skb);
++		return;
++	}
++
++	sdata = netdev_priv(dev);
++	if (sdata->dev != dev) {
++		kfree_skb(skb);
++		return;
++	}
++
++	skb->dev = dev;
++	skb->protocol = eth_type_trans(skb, dev);
++	napi_gro_receive(napi, skb);
++}
++#endif
++
+ /*
+  * NOTE: Be very careful when changing this function, it must NOT return
+  * an error on interface type changes that have been pre-checked, so most
+  * checks should be in ieee80211_check_concurrent_iface.
+  */
+@@ -1501,10 +1581,22 @@
+ 		ieee80211_hw_conf_init(local);
+ 	else if (hw_reconf_flags)
+ 		ieee80211_hw_config(local, -1, hw_reconf_flags);
+ 
+ 	ieee80211_recalc_ps(local);
++
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++	sdata->nssctx = nss_virt_if_create_sync(dev);
++	if (sdata->nssctx) {
++		skb_queue_head_init(&sdata->rx_queue);
++		INIT_WORK(&sdata->rx_work, mac80211_nss_rx_work);
++		nss_virt_if_register(sdata->nssctx, mac80211_nss_receive, sdata->dev);
++		sdata_info(sdata, "Created NSS virtual interface\n");
++	} else {
++		sdata_err(sdata, "Failed to create NSS virtual interface\n");
++	}
++#endif
+ 
+ 	set_bit(SDATA_STATE_RUNNING, &sdata->state);
+ 
+ 	return 0;
+  err_del_interface:
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -2621,10 +2621,19 @@
+ 		return false;
+ 
+ 	return true;
+ }
+ 
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++static inline void mac80211_nss_queue_rx(struct sk_buff *skb,
++					 struct ieee80211_sub_if_data *sdata)
++{
++	skb_queue_tail(&sdata->rx_queue, skb);
++	schedule_work(&sdata->rx_work);
++}
++#endif
++
+ static void ieee80211_deliver_skb_to_local_stack(struct sk_buff *skb,
+ 						 struct ieee80211_rx_data *rx)
+ {
+ 	struct ieee80211_sub_if_data *sdata = rx->sdata;
+ 	struct net_device *dev = sdata->dev;
+@@ -2640,10 +2649,17 @@
+ 		dev_kfree_skb(skb);
+ 	} else {
+ 		struct ethhdr *ehdr = (void *)skb_mac_header(skb);
+ 
+ 		memset(skb->cb, 0, sizeof(skb->cb));
++
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++		if (sdata->nssctx) {
++			mac80211_nss_queue_rx(skb, sdata);
++			return;
++		}
++#endif
+ 
+ 		/*
+ 		 * 802.1X over 802.11 requires that the authenticator address
+ 		 * be used for EAPOL frames. However, 802.1X allows the use of
+ 		 * the PAE group address instead. If the interface is part of
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -35,10 +35,15 @@
+ #include "mesh.h"
+ #include "wep.h"
+ #include "wpa.h"
+ #include "wme.h"
+ #include "rate.h"
++
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++#include <net/ip.h>
++#include <net/dsfield.h>
++#endif
+ 
+ /* misc utils */
+ 
+ static __le16 ieee80211_duration(struct ieee80211_tx_data *tx,
+ 				 struct sk_buff *skb, int group_addr,
+@@ -1705,10 +1710,18 @@
+ 					ieee80211_purge_tx_queue(&local->hw,
+ 								 skbs);
+ 					return true;
+ 				}
+ 			} else {
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++				if (skb_queue_len(&local->pending[q]) >= 1000) {
++					spin_unlock_irqrestore(
++						&local->queue_stop_reason_lock, flags);
++					ieee80211_purge_tx_queue(&local->hw, skbs);
++					return false;
++				}
++#endif
+ 
+ 				/*
+ 				 * Since queue is stopped, queue up frames for
+ 				 * later transmission from the tx-pending
+ 				 * tasklet when the queue is woken again.
+@@ -4513,10 +4526,28 @@
+  */
+ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
+ 				       struct net_device *dev)
+ {
+ 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
++
++#ifdef CPTCFG_MAC80211_NSS_SUPPORT
++	/* Recover QoS metadata for Ethernet frames returned without protocol. */
++	if (sdata->nssctx && likely(!skb->protocol) &&
++	    skb->len >= ETH_HLEN + 2) {
++		skb_set_network_header(skb, ETH_HLEN);
++		switch (((struct ethhdr *)skb->data)->h_proto) {
++		case htons(ETH_P_IP):
++			skb->priority = (ipv4_get_dsfield(ip_hdr(skb)) & 0xfc) >> 5;
++			break;
++		case htons(ETH_P_IPV6):
++			skb->priority = (ipv6_get_dsfield(ipv6_hdr(skb)) & 0xfc) >> 5;
++			break;
++		}
++	}
++#endif
++
++	
+ 	const struct ethhdr *eth = (void *)skb->data;
+ 
+ 	if (likely(!is_multicast_ether_addr(eth->h_dest)))
+ 		goto normal;
+ 

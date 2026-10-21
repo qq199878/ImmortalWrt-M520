@@ -1,0 +1,34 @@
+--- a/ecm_interface.c
++++ b/ecm_interface.c
+@@ -2318,6 +2318,31 @@
+ 	 * Does the accel engine recognise this interface?
+ 	 */
+ 	ae_interface_num = feci->ae_interface_number_by_dev_get(dev);
++	/*
++	 * DSA fallback for user ports (wan/lan1).
++	 * DSA user ports are not registered with NSS; only their conduit
++	 * (eth0/eth1) is. dev_get_iflink() reports the conduit ifindex for
++	 * DSA user ports. Self reference is skipped so ordinary netdevs are
++	 * unaffected.
++	 */
++	if (ae_interface_num < 0) {
++		int _fl = dev_get_iflink(dev);
++
++		if ((_fl > 0) && (_fl != dev->ifindex)) {
++			struct net_device *_cd = dev_get_by_index(&init_net, _fl);
++
++			if (_cd) {
++				int32_t _n = feci->ae_interface_number_by_dev_get(_cd);
++
++				pr_alert("[DSAFIX] %s iflink=%d conduit=%s ae=%d\n",
++					 dev_name, _fl, _cd->name, _n);
++				if (_n >= 0) {
++					ae_interface_num = _n;
++				}
++				dev_put(_cd);
++			}
++		}
++	}
+ 
+ 	DEBUG_TRACE("%p: Establish interface instance for device: %p is type: %d, name: %s, ifindex: %d, ae_if: %d, mtu: %d\n",
+ 			feci, dev, dev_type, dev_name, dev_interface_num, ae_interface_num, dev_mtu);

@@ -1,0 +1,28 @@
+--- a/nss_data_plane/nss_data_plane.c
++++ b/nss_data_plane/nss_data_plane.c
+@@ -42 +42 @@
+-		nss_warning("Failed to send pnode queue config to core 0\n");
++		nss_info_always("Failed to send pnode queue config to core 0\n");
+@@ -55 +55 @@
+-		nss_warning("Failed to register data plane workqueue on core 1\n");
++		nss_info_always("Failed to register data plane workqueue on core 1\n");
+@@ -59 +59 @@
+-	nss_info("Register data plane workqueue on core 1\n");
++	nss_info_always("Register data plane workqueue on core 1\n");
+@@ -70 +70 @@
+-		nss_warning("Can't allocate workqueue\n");
++		nss_info_always("Can't allocate workqueue\n");
+--- a/nss_data_plane/nss_data_plane_gmac.c
++++ b/nss_data_plane/nss_data_plane_gmac.c
+@@ -182 +182 @@
+-		nss_info("Platform don't have gmac%d enabled, don't bring up nss_phys_if and don't register to nss-gmac", if_num);
++		nss_info_always("Platform don't have gmac%d enabled, don't bring up nss_phys_if and don't register to nss-gmac\n", if_num);
+@@ -203 +203 @@
+-		nss_info("Override nss-gmac data plane failed\n");
++		nss_info_always("Override nss-gmac data plane failed\n");
+@@ -253 +253 @@
+-			nss_warning("%p: Register data plane failed for gmac:%d\n", nss_ctx, i);
++			nss_info_always("%p: Register data plane failed for gmac:%d\n", nss_ctx, i);
+@@ -255 +255 @@
+-			nss_info("%p: Register data plan to gmac:%d success\n", nss_ctx, i);
++			nss_info_always("%p: Register data plan to gmac:%d success\n", nss_ctx, i);

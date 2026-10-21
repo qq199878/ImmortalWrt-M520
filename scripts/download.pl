@@ -104,6 +104,21 @@ sub tool_present {
 	return $present
 }
 
+# ---- GitHub mirror acceleration (local build env only) ----
+sub gh_mirror {
+	my $u = shift;
+	return $u unless $u;
+	return $u if $u =~ m{^https?://ghfast\.top/};
+	my $prefix = $ENV{GH_MIRROR_PREFIX} || '';
+	return $u unless $prefix;
+	if ($u =~ m{^https?://(github\.com|codeload\.github\.com|raw\.githubusercontent\.com|objects\.githubusercontent\.com)/}) {
+		$u =~ s{^https?://}{};
+		return $prefix . $u;
+	}
+	return $u;
+}
+# ----------------------------------------------------------
+
 sub select_tool {
 	$custom_tool =~ tr/"//d;
 	if ($custom_tool) {
@@ -124,15 +139,15 @@ sub download_cmd {
 	my $filename = shift;
 
 	if ($download_tool eq "curl") {
-		return (qw(curl -f --connect-timeout 5 --retry 3 --location),
+		return (qw(curl -f --connect-timeout 15 --retry 3 --retry-delay 2 --location),
 			$check_certificate ? () : '--insecure',
 			shellwords($ENV{CURL_OPTIONS} || ''),
-			$url);
+			gh_mirror($url));
 	} elsif ($download_tool eq "wget") {
-		return (qw(wget --tries=3 --timeout=5 --output-document=-),
+		return (qw(wget --tries=3 --timeout=15 --output-document=-),
 			$check_certificate ? () : '--no-check-certificate',
 			shellwords($ENV{WGET_OPTIONS} || ''),
-			$url);
+			gh_mirror($url));
 	} elsif ($download_tool eq "aria2c") {
 		my $additional_mirrors = join(" ", map "$_/$filename", @_);
 		my @chArray = ('a'..'z', 'A'..'Z', 0..9);

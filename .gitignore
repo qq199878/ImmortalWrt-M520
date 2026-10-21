@@ -44,3 +44,6 @@ putty.log
 # bully prebuilt binary (source only)
 package/bully/src/bully
 *.bak_*
+# ==== M520 local: NSS work backups & build logs (do not commit) ====
+.build_logs/
+.backup_*/

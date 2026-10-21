@@ -1,0 +1,71 @@
+--- a/Makefile
++++ b/Makefile
+@@ -330,12 +330,12 @@
+ ccflags-y += -DECM_CLASSIFIER_DEFAULT_DEBUG_LEVEL=1
+ ccflags-y += -DECM_DB_DEBUG_LEVEL=1
+ ccflags-y += -DECM_INIT_DEBUG_LEVEL=3
+-ccflags-y += -DECM_FRONT_END_IPV4_DEBUG_LEVEL=1
++ccflags-y += -DECM_FRONT_END_IPV4_DEBUG_LEVEL=2
+ ccflags-y += -DECM_FRONT_END_IPV6_DEBUG_LEVEL=1
+ ccflags-y += -DECM_FRONT_END_COMMON_DEBUG_LEVEL=1
+-ccflags-y += -DECM_NSS_IPV4_DEBUG_LEVEL=1
+-ccflags-y += -DECM_NSS_PORTED_IPV4_DEBUG_LEVEL=1
+-ccflags-y += -DECM_NSS_NON_PORTED_IPV4_DEBUG_LEVEL=1
++ccflags-y += -DECM_NSS_IPV4_DEBUG_LEVEL=2
++ccflags-y += -DECM_NSS_PORTED_IPV4_DEBUG_LEVEL=2
++ccflags-y += -DECM_NSS_NON_PORTED_IPV4_DEBUG_LEVEL=2
+ ccflags-y += -DECM_NSS_MULTICAST_IPV4_DEBUG_LEVEL=1
+ ccflags-y += -DECM_NSS_IPV6_DEBUG_LEVEL=1
+ ccflags-y += -DECM_NSS_PORTED_IPV6_DEBUG_LEVEL=1
+--- a/frontends/nss/ecm_nss_ipv4.c
++++ b/frontends/nss/ecm_nss_ipv4.c
+@@ -145,6 +145,9 @@
+  * Debugfs dentry object.
+  */
+ static struct dentry *ecm_nss_ipv4_dentry;
++static atomic_t ecm_diag_hook_cnt = ATOMIC_INIT(0);
++static atomic_t ecm_diag_proc_cnt = ATOMIC_INIT(0);
++static atomic_t ecm_diag_null_cnt = ATOMIC_INIT(0);
+ 
+ /*
+  * Workqueue for the connection sync
+@@ -997,6 +1000,9 @@
+ 	uint8_t *src_node_addr_nat;
+ 	uint8_t *dest_node_addr_nat;
+ 
++	if (atomic_inc_return(&ecm_diag_proc_cnt) <= 40) {
++		pr_alert("[DIAG] ip_process in=%s out=%s routed=%d l2=%d\n", in_dev ? in_dev->name : "NULL", out_dev ? out_dev->name : "NULL", (int)is_routed, (int)is_l2_encap);
++	}
+ 	/*
+ 	 * Obtain the IP header from the skb
+ 	 */
+@@ -1502,6 +1508,9 @@
+ 	bool can_accel = true;
+ 	unsigned int result;
+ 
++	if (atomic_inc_return(&ecm_diag_hook_cnt) <= 40) {
++		pr_alert("[DIAG] hook enter out=%s skb_iif=%u nhs_in=%s\n", out ? out->name : "NULL", skb->skb_iif, (nhs && nhs->in) ? nhs->in->name : "NULL");
++	}
+ 	DEBUG_TRACE("%p: Routing: %s\n", out, out->name);
+ 
+ 	/*
+@@ -1558,6 +1567,9 @@
+ 		/*
+ 		 * Locally sourced packets are not processed in ECM.
+ 		 */
++		if (atomic_inc_return(&ecm_diag_null_cnt) <= 40) {
++			pr_alert("[DIAG] IN_NULL skb_iif=%u out=%s return ACCEPT\n", skb->skb_iif, out ? out->name : "NULL");
++		}
+ 		return NF_ACCEPT;
+ 	}
+ 
+@@ -2608,7 +2620,8 @@
+ 
+ 	DEBUG_INFO("ECM NSS IPv4 init\n");
+ 
+-	debugfs_create_dir("ecm_nss_ipv4", dentry);
++	ecm_nss_ipv4_dentry = debugfs_create_dir("ecm_nss_ipv4", dentry);
++	pr_alert("[DIAG] debugfs dentry=%p\n", ecm_nss_ipv4_dentry);
+ 
+ 	debugfs_create_u32("no_action_limit_default", S_IRUGO | S_IWUSR, ecm_nss_ipv4_dentry,
+ 					(u32 *)&ecm_nss_ipv4_no_action_limit_default);
