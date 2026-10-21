@@ -1,5 +1,5 @@
 --- a/nss_dynamic_interface.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_dynamic_interface.c	2026-10-22 02:08:21.901280344 +0800
++++ b/nss_dynamic_interface.c	2026-10-22 02:33:08.685301641 +0800
 @@ -40,7 +40,10 @@
  	struct nss_dynamic_interface_msg *ndim = (struct nss_dynamic_interface_msg *)ncm;
  	int32_t if_num;
@@ -13,7 +13,7 @@
  	/*
  	 * Is this a valid request/response packet?
 --- a/nss_shaper.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_shaper.c	2026-10-22 02:08:21.901280344 +0800
++++ b/nss_shaper.c	2026-10-22 02:33:08.688301770 +0800
 @@ -54,7 +54,8 @@
  	 */
  	if (if_num >= NSS_MAX_NET_INTERFACES) {
@@ -115,7 +115,7 @@
  
  	/*
 --- a/nss_l2tpv2.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_l2tpv2.c	2026-10-22 02:08:21.901280344 +0800
++++ b/nss_l2tpv2.c	2026-10-22 02:33:08.689301813 +0800
 @@ -82,7 +82,10 @@
  
  	nss_l2tpv2_msg_callback_t cb;
@@ -129,7 +129,7 @@
  	/*
  	 * Trace Messages
 --- a/nss_trustsec_tx.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_trustsec_tx.c	2026-10-22 02:08:21.902280387 +0800
++++ b/nss_trustsec_tx.c	2026-10-22 02:33:08.690301856 +0800
 @@ -39,7 +39,10 @@
  	nss_trustsec_tx_msg_callback_t cb;
  	struct nss_trustsec_tx_msg *npm = (struct nss_trustsec_tx_msg *)ncm;
@@ -143,7 +143,7 @@
  	/*
  	 * Trace messages.
 --- a/nss_ipsec.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_ipsec.c	2026-10-22 02:08:21.902280387 +0800
++++ b/nss_ipsec.c	2026-10-22 02:33:08.692301942 +0800
 @@ -140,7 +140,10 @@
  		return;
  	}
@@ -157,7 +157,7 @@
  	if (ncm->response == NSS_CMN_RESPONSE_LAST) {
  		nss_warning("%p: rx message response for if %d, type %d, is invalid: %d", nss_ctx, ncm->interface,
 --- a/nss_ipsec_cmn.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_ipsec_cmn.c	2026-10-22 02:08:21.902280387 +0800
++++ b/nss_ipsec_cmn.c	2026-10-22 02:33:08.694302029 +0800
 @@ -496,7 +496,10 @@
  	struct nss_ctx_instance *nss_ctx = nss_ipsec_cmn_get_context();
  	uint32_t ret;
@@ -171,7 +171,7 @@
  	ret = nss_core_register_handler(nss_ctx, if_num, nss_ipsec_cmn_msg_handler, app_data);
  	if (ret != NSS_CORE_STATUS_SUCCESS) {
 --- a/nss_wifili.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_wifili.c	2026-10-22 02:08:21.903280430 +0800
++++ b/nss_wifili.c	2026-10-22 02:33:08.696302114 +0800
 @@ -47,7 +47,10 @@
  	/*
  	 * The interface number shall be wifili soc interface or wifili radio interface
@@ -185,7 +185,7 @@
  	/*
  	 * Trace messages.
 --- a/nss_pppoe.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_pppoe.c	2026-10-22 02:08:21.903280430 +0800
++++ b/nss_pppoe.c	2026-10-22 02:33:08.697302158 +0800
 @@ -142,7 +142,10 @@
  	void *ctx;
  	nss_pppoe_msg_callback_t cb;
@@ -199,7 +199,7 @@
  	/*
  	 * Trace Messages
 --- a/nss_dtls_cmn.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_dtls_cmn.c	2026-10-22 02:08:21.904280473 +0800
++++ b/nss_dtls_cmn.c	2026-10-22 02:33:08.698302201 +0800
 @@ -350,7 +350,10 @@
  	struct nss_ctx_instance *nss_ctx = nss_dtls_cmn_get_context();
  	uint32_t ret;
@@ -225,7 +225,7 @@
  	ret = nss_core_unregister_handler(nss_ctx, if_num);
  	if (ret != NSS_CORE_STATUS_SUCCESS) {
 --- a/nss_wifi.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_wifi.c	2026-10-22 02:08:21.904280473 +0800
++++ b/nss_wifi.c	2026-10-22 02:33:08.699302244 +0800
 @@ -39,7 +39,10 @@
  
  	nss_info("%p: NSS ->HLOS message for wifi\n", nss_ctx);
@@ -239,7 +239,7 @@
  	/*
  	 * Trace messages.
 --- a/nss_wifi_vdev.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_wifi_vdev.c	2026-10-22 02:08:21.904280473 +0800
++++ b/nss_wifi_vdev.c	2026-10-22 02:33:08.700302287 +0800
 @@ -26,7 +26,10 @@
  
  	nss_info("%p: NSS->HLOS message for wifi vdev on interface:%d", nss_ctx, ncm->interface);
@@ -264,8 +264,8 @@
  
  	return nss_core_send_packet(nss_ctx, os_buf, if_num, 0);
  }
---- a/nss_ipv6.c	2026-10-22 02:07:04.747956961 +0800
-+++ b/nss_ipv6.c	2026-10-22 02:08:21.905280516 +0800
+--- a/nss_ipv6.c	2026-10-22 02:31:56.111177063 +0800
++++ b/nss_ipv6.c	2026-10-22 02:33:08.701302330 +0800
 @@ -77,7 +77,10 @@
  	struct nss_ipv6_msg *nim = (struct nss_ipv6_msg *)ncm;
  	nss_ipv6_msg_callback_t cb;
@@ -278,8 +278,8 @@
  
  	/*
  	 * Is this a valid request/response packet?
---- a/nss_n2h.c	2026-10-22 02:07:04.747956961 +0800
-+++ b/nss_n2h.c	2026-10-22 02:08:21.905280516 +0800
+--- a/nss_n2h.c	2026-10-22 02:31:56.111177063 +0800
++++ b/nss_n2h.c	2026-10-22 02:33:08.702302373 +0800
 @@ -67,7 +67,10 @@
  	struct nss_n2h_msg *nnm = (struct nss_n2h_msg *)ncm;
  	nss_n2h_msg_callback_t cb;
@@ -299,13 +299,13 @@
 -				BUG_ON(!page_count);
 +				if (unlikely(!page_count)) {
 +					pr_err("NSS_BUGON_NOPANIC %s[%d]: !page_count\n", __FUNCTION__, __LINE__);
-+					return NSS_TX_FAILURE_BAD_PARAM;
++					goto failure;
 +				}
  				break;
  			}
  
---- a/nss_ipv4.c	2026-10-22 02:07:04.747956961 +0800
-+++ b/nss_ipv4.c	2026-10-22 02:08:21.906280559 +0800
+--- a/nss_ipv4.c	2026-10-22 02:31:56.111177063 +0800
++++ b/nss_ipv4.c	2026-10-22 02:33:08.704302459 +0800
 @@ -78,7 +78,10 @@
  	struct nss_ipv4_msg *nim = (struct nss_ipv4_msg *)ncm;
  	nss_ipv4_msg_callback_t cb;
@@ -319,7 +319,7 @@
  	/*
  	 * Sanity check the message type
 --- a/nss_ipv4_reasm.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_ipv4_reasm.c	2026-10-22 02:08:21.906280559 +0800
++++ b/nss_ipv4_reasm.c	2026-10-22 02:33:08.705302502 +0800
 @@ -30,7 +30,10 @@
  {
  	struct nss_ipv4_reasm_msg *nim = (struct nss_ipv4_reasm_msg *)ncm;
@@ -333,7 +333,7 @@
  	/*
  	 * Handle deprecated messages.  Eventually these messages should be removed.
 --- a/nss_ipv6_reasm.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_ipv6_reasm.c	2026-10-22 02:08:21.906280559 +0800
++++ b/nss_ipv6_reasm.c	2026-10-22 02:33:08.705302502 +0800
 @@ -29,7 +29,10 @@
  {
  	struct nss_ipv6_reasm_msg *nim = (struct nss_ipv6_reasm_msg *)ncm;
@@ -347,7 +347,7 @@
  	switch (nim->cm.type) {
  	case NSS_IPV6_REASM_STATS_SYNC_MSG:
 --- a/nss_lag.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_lag.c	2026-10-22 02:08:21.907280602 +0800
++++ b/nss_lag.c	2026-10-22 02:33:08.706302545 +0800
 @@ -152,10 +152,10 @@
  	void *ctx = NULL;
  	nss_lag_event_callback_t cb;
@@ -364,7 +364,7 @@
  	/*
  	 * Trace Messages
 --- a/nss_gre.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_gre.c	2026-10-22 02:08:21.907280602 +0800
++++ b/nss_gre.c	2026-10-22 02:33:08.707302588 +0800
 @@ -87,7 +87,10 @@
  	nss_gre_msg_callback_t cb;
  
@@ -378,7 +378,7 @@
  	/*
  	 * Trace Messages
 --- a/nss_gre_tunnel.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_gre_tunnel.c	2026-10-22 02:08:21.907280602 +0800
++++ b/nss_gre_tunnel.c	2026-10-22 02:33:08.708302631 +0800
 @@ -63,7 +63,10 @@
  	nss_gre_tunnel_msg_callback_t cb;
  
@@ -452,7 +452,7 @@
  	spin_lock_bh(&nss_gre_tunnel_stats_session_debug_lock);
  	for (i = 0; i < NSS_MAX_GRE_TUNNEL_SESSIONS; i++) {
 --- a/nss_gre_redir.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_gre_redir.c	2026-10-22 02:08:21.908280645 +0800
++++ b/nss_gre_redir.c	2026-10-22 02:33:08.709302674 +0800
 @@ -172,8 +172,10 @@
  	 * interface should either be dynamic interface for receiving tunnel msg or GRE_REDIR interface for
  	 * receiving base node messages.
@@ -467,7 +467,7 @@
  	/*
  	 * Trace Messages
 --- a/nss_gre_redir_lag_ds.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_gre_redir_lag_ds.c	2026-10-22 02:08:21.908280645 +0800
++++ b/nss_gre_redir_lag_ds.c	2026-10-22 02:33:08.710302717 +0800
 @@ -126,7 +126,10 @@
  	/*
  	 * Interface should be a dynamic interface of type NSS_DYNAMIC_INTERFACE_TYPE_GRE_REDIR_LAG_DS.
@@ -481,7 +481,7 @@
  	/*
  	 * Is this a valid request/response packet?
 --- a/nss_gre_redir_lag_us.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_gre_redir_lag_us.c	2026-10-22 02:08:21.908280645 +0800
++++ b/nss_gre_redir_lag_us.c	2026-10-22 02:33:08.711302760 +0800
 @@ -198,7 +198,10 @@
  	/*
  	 * Interface should be a dynamic interface of type NSS_DYNAMIC_INTERFACE_TYPE_GRE_REDIR_LAG_US.
@@ -495,7 +495,7 @@
  	/*
  	 * Trace messages.
 --- a/nss_portid.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_portid.c	2026-10-22 02:08:21.909280688 +0800
++++ b/nss_portid.c	2026-10-22 02:33:08.712302804 +0800
 @@ -49,7 +49,10 @@
  	nss_portid_msg_callback_t cb;
  	struct nss_portid_msg *npm = (struct nss_portid_msg *)ncm;
@@ -508,8 +508,8 @@
  
  	/*
  	 * Trace Messages
---- a/nss_ppe.c	2026-10-22 02:07:04.747956961 +0800
-+++ b/nss_ppe.c	2026-10-22 02:08:21.909280688 +0800
+--- a/nss_ppe.c	2026-10-22 02:31:56.111177063 +0800
++++ b/nss_ppe.c	2026-10-22 02:33:08.713302847 +0800
 @@ -245,7 +245,10 @@
  	nss_ppe_msg_callback_t cb;
  
@@ -523,7 +523,7 @@
  	/*
  	 * Trace messages.
 --- a/nss_bridge.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_bridge.c	2026-10-22 02:08:21.909280688 +0800
++++ b/nss_bridge.c	2026-10-22 02:33:08.714302889 +0800
 @@ -39,7 +39,10 @@
  	struct nss_bridge_msg *nbm = (struct nss_bridge_msg *)ncm;
  	nss_bridge_msg_callback_t cb;
@@ -537,7 +537,7 @@
  	/*
  	 * Is this a valid request/response packet?
 --- a/nss_capwap.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_capwap.c	2026-10-22 02:08:21.910280732 +0800
++++ b/nss_capwap.c	2026-10-22 02:33:08.715302933 +0800
 @@ -282,9 +282,18 @@
  	int32_t status;
  	int32_t if_num;
@@ -573,7 +573,7 @@
  	return nss_core_send_packet(nss_ctx, os_buf, if_num, H2N_BIT_FLAG_VIRTUAL_BUFFER);
  }
 --- a/nss_dtls.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_dtls.c	2026-10-22 02:08:21.910280732 +0800
++++ b/nss_dtls.c	2026-10-22 02:33:08.716302976 +0800
 @@ -157,7 +157,10 @@
  	nss_dtls_msg_callback_t cb;
  
@@ -635,7 +635,7 @@
  	spin_lock_bh(&nss_dtls_session_stats_lock);
  	for (i = 0; i < NSS_MAX_DTLS_SESSIONS; i++) {
 --- a/nss_pvxlan.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_pvxlan.c	2026-10-22 02:08:21.910280732 +0800
++++ b/nss_pvxlan.c	2026-10-22 02:33:08.717303019 +0800
 @@ -169,7 +169,10 @@
  	nss_pvxlan_msg_callback_t cb;
  	struct nss_pvxlan_handle * h;
@@ -661,7 +661,7 @@
  	return nss_core_send_packet(nss_ctx, buf, if_num, H2N_BIT_FLAG_VIRTUAL_BUFFER);
  }
 --- a/nss_tunipip6.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_tunipip6.c	2026-10-22 02:08:21.911280775 +0800
++++ b/nss_tunipip6.c	2026-10-22 02:33:08.718303062 +0800
 @@ -46,7 +46,10 @@
  	void *ctx;
  	nss_tunipip6_msg_callback_t cb;
@@ -675,7 +675,7 @@
  	/*
  	 * Trace Messages
 --- a/nss_tun6rd.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_tun6rd.c	2026-10-22 02:08:21.911280775 +0800
++++ b/nss_tun6rd.c	2026-10-22 02:33:08.719303105 +0800
 @@ -28,7 +28,10 @@
  
  	nss_tun6rd_msg_callback_t cb;
@@ -689,7 +689,7 @@
  	/*
  	 * Trace Messages
 --- a/nss_map_t.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_map_t.c	2026-10-22 02:08:21.911280775 +0800
++++ b/nss_map_t.c	2026-10-22 02:33:08.719303105 +0800
 @@ -153,7 +153,10 @@
  	nss_map_t_msg_callback_t cb;
  
@@ -702,8 +702,8 @@
  
  	/*
  	 * Trace Messages
---- a/nss_pptp.c	2026-10-22 02:07:04.757957392 +0800
-+++ b/nss_pptp.c	2026-10-22 02:08:21.911280775 +0800
+--- a/nss_pptp.c	2026-10-22 02:31:56.122177537 +0800
++++ b/nss_pptp.c	2026-10-22 02:33:08.720303148 +0800
 @@ -172,7 +172,10 @@
  
  	nss_pptp_msg_callback_t cb;
@@ -717,7 +717,7 @@
  	/*
  	 * Trace Messages
 --- a/nss_sjack.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_sjack.c	2026-10-22 02:08:21.912280818 +0800
++++ b/nss_sjack.c	2026-10-22 02:33:08.721303191 +0800
 @@ -29,7 +29,10 @@
  	nss_sjack_msg_callback_t cb;
  	struct nss_sjack_msg *nsm = (struct nss_sjack_msg *)ncm;
@@ -730,8 +730,8 @@
  
  	/*
  	 * Trace Messages
---- a/nss_tstamp.c	2026-10-22 02:07:04.747956961 +0800
-+++ b/nss_tstamp.c	2026-10-22 02:08:21.912280818 +0800
+--- a/nss_tstamp.c	2026-10-22 02:31:56.112177106 +0800
++++ b/nss_tstamp.c	2026-10-22 02:33:08.722303234 +0800
 @@ -141,7 +141,10 @@
  	struct net_device *dev;
  	uint32_t tstamp_sz;
@@ -756,21 +756,23 @@
  
  	skb_pull_inline(skb, tstamp_sz);
  
---- a/nss_log.c	2026-10-22 02:07:04.748957004 +0800
-+++ b/nss_log.c	2026-10-22 02:08:21.912280818 +0800
-@@ -155,7 +155,10 @@
+--- a/nss_log.c	2026-10-22 02:31:56.112177106 +0800
++++ b/nss_log.c	2026-10-22 02:33:08.723303277 +0800
+@@ -155,7 +155,12 @@
  
  	mutex_lock(&nss_log_mutex);
  	nss_rbe[data->nss_id].ref_cnt--;
 -	BUG_ON(nss_rbe[data->nss_id].ref_cnt < 0);
 +	if (unlikely(nss_rbe[data->nss_id].ref_cnt < 0)) {
 +		pr_err("NSS_BUGON_NOPANIC %s[%d]: nss_rbe[data->nss_id].ref_cnt < 0\n", __FUNCTION__, __LINE__);
++		mutex_unlock(&nss_log_mutex);
++		kfree(data);
 +		return 0;
 +	}
  	if (!nss_rbe[data->nss_id].ref_cnt) {
  		wake_up(&nss_log_wq);
  	}
-@@ -325,7 +328,10 @@
+@@ -325,7 +330,10 @@
  	struct nss_log_debug_interface_msg *ntm = (struct nss_log_debug_interface_msg *)ncm;
  	nss_log_msg_callback_t cb;
  
@@ -782,8 +784,8 @@
  
  	/*
  	 * Is this a valid request/response packet?
---- a/nss_meminfo.c	2026-10-22 02:07:04.748957004 +0800
-+++ b/nss_meminfo.c	2026-10-22 02:08:21.913280861 +0800
+--- a/nss_meminfo.c	2026-10-22 02:31:56.112177106 +0800
++++ b/nss_meminfo.c	2026-10-22 02:33:08.724303320 +0800
 @@ -360,14 +360,20 @@
  		 * nss_if_mem_map settings
  		 */
@@ -791,7 +793,7 @@
 -			BUG_ON(mtype == NSS_MEMINFO_MEMTYPE_UTCM_SHARED);
 +			if (unlikely(mtype == NSS_MEMINFO_MEMTYPE_UTCM_SHARED)) {
 +				pr_err("NSS_BUGON_NOPANIC %s[%d]: mtype == NSS_MEMINFO_MEMTYPE_UTCM_SHARED\n", __FUNCTION__, __LINE__);
-+				return false;
++				goto cleanup;
 +			}
  			mem_ctx->if_map_memtype = mtype;
  			mem_ctx->if_map_dma = dma_addr;
@@ -802,13 +804,13 @@
 -			BUG_ON(mtype == NSS_MEMINFO_MEMTYPE_UTCM_SHARED);
 +			if (unlikely(mtype == NSS_MEMINFO_MEMTYPE_UTCM_SHARED)) {
 +				pr_err("NSS_BUGON_NOPANIC %s[%d]: mtype == NSS_MEMINFO_MEMTYPE_UTCM_SHARED\n", __FUNCTION__, __LINE__);
-+				return false;
++				goto cleanup;
 +			}
  			mem_ctx->logbuffer_memtype = mtype;
  			mem_ctx->logbuffer_dma = dma_addr;
  			mem_ctx->logbuffer = (struct nss_log_descriptor *)kern_addr;
 --- a/nss_freq.c	2019-08-23 07:12:02.000000000 +0800
-+++ b/nss_freq.c	2026-10-22 02:08:21.913280861 +0800
++++ b/nss_freq.c	2026-10-22 02:33:08.725303363 +0800
 @@ -75,7 +75,10 @@
  {
  	nss_freq_scales_t index = nss_runtime_samples.freq_scale_index;
@@ -821,8 +823,8 @@
  
  	nss_info("frequency:%d index:%d sample count:%x\n", nss_runtime_samples.freq_scale[index].frequency,
  					index, nss_runtime_samples.average);
---- a/nss_core.c	2026-10-22 02:07:04.748957004 +0800
-+++ b/nss_core.c	2026-10-22 02:08:21.914280904 +0800
+--- a/nss_core.c	2026-10-22 02:31:56.113177149 +0800
++++ b/nss_core.c	2026-10-22 02:33:08.727303449 +0800
 @@ -225,14 +225,20 @@
  	/*
  	 * Check that interface number is in range.
@@ -881,19 +883,20 @@
  
  	reg = &nss_ctx->subsys_dp_register[if_num];
  
-@@ -2571,7 +2586,10 @@
+@@ -2571,7 +2586,11 @@
  	 * Now handle rest of the fragments.
  	 */
  	nr_frags = skb_shinfo(nbuf)->nr_frags;
 -	BUG_ON(nr_frags > MAX_SKB_FRAGS);
 +	if (unlikely(nr_frags > MAX_SKB_FRAGS)) {
 +		pr_err("NSS_BUGON_NOPANIC %s[%d]: nr_frags > MAX_SKB_FRAGS\n", __FUNCTION__, __LINE__);
++		nss_core_send_unwind_dma(nss_ctx->dev, desc_if, hlos_index, 1, is_fraglist);
 +		return -1;
 +	}
  	for (i = 0; i < nr_frags; i++) {
  		frag = &skb_shinfo(nbuf)->frags[i];
  
-@@ -2742,7 +2760,10 @@
+@@ -2742,7 +2761,10 @@
  	 */
  	if (!skb_has_frag_list(nbuf)) {
  		segments = skb_shinfo(nbuf)->nr_frags;
@@ -905,8 +908,8 @@
  	} else {
  		struct sk_buff *iter;
  		segments = 0;
---- a/nss_init.c	2026-10-22 02:07:04.749957047 +0800
-+++ b/nss_init.c	2026-10-22 02:08:21.914280904 +0800
+--- a/nss_init.c	2026-10-22 02:31:56.113177149 +0800
++++ b/nss_init.c	2026-10-22 02:33:08.728303492 +0800
 @@ -171,7 +171,10 @@
  {
  	int ret, i;
@@ -919,8 +922,8 @@
  
  	ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
  
---- a/nss_hal/ipq806x/nss_hal_pvt.c	2026-10-22 02:07:04.749957047 +0800
-+++ b/nss_hal/ipq806x/nss_hal_pvt.c	2026-10-22 02:08:21.915280947 +0800
+--- a/nss_hal/ipq806x/nss_hal_pvt.c	2026-10-22 02:31:56.113177149 +0800
++++ b/nss_hal/ipq806x/nss_hal_pvt.c	2026-10-22 02:33:08.729303535 +0800
 @@ -368,7 +368,10 @@
  		writel(0x014B5625, PLL18_CONFIG);
  		writel(0x00003080, PLL18_TEST_CTL);

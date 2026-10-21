@@ -142,20 +142,45 @@ MAP = [
 
 
 def build_block(indent, expr, ret):
-    """生成替换代码块"""
+    """生成替换代码块
+
+    对带资源清理的函数（信号量/互斥锁/描述符/DMA 内存），
+    返回值不能直接 return，必须先释放资源再返回。
+    """
     if expr in ('false', '0'):
         # 不可达分支：无条件打印 + 返回
         return (
             '%spr_err("NSS_BUGON_NOPANIC %%s[%%d]: unreachable branch\\n", __FUNCTION__, __LINE__);\n'
             '%s%s'
         ) % (indent, indent, ret)
+
     safe = expr.replace('"', "'")
-    return (
+    body = (
         '%sif (unlikely(%s)) {\n'
         '%s\tpr_err("NSS_BUGON_NOPANIC %%s[%%d]: %s\\n", __FUNCTION__, __LINE__);\n'
-        '%s\t%s\n'
-        '%s}'
-    ) % (indent, expr, indent, safe, indent, ret, indent)
+    ) % (indent, expr, indent, safe)
+
+    # ---- 带资源清理的特殊场景 ----
+    # 1) nss_n2h.c: down(&sem) 之后失败 → 必须走 failure 标签释放信号量
+    if '!page_count' in expr:
+        body += '%s\tgoto failure;\n' % indent
+    # 2) nss_log.c: mutex_lock 之后失败 → 必须先 unlock 并 kfree
+    elif 'ref_cnt < 0' in expr:
+        body += '%s\tmutex_unlock(&nss_log_mutex);\n' % indent
+        body += '%s\tkfree(data);\n' % indent
+        body += '%s\treturn 0;\n' % indent
+    # 3) nss_meminfo.c: 已有 cleanup 标签 → 必须走 cleanup 释放 DMA 内存
+    elif 'NSS_MEMINFO_MEMTYPE_UTCM_SHARED' in expr:
+        body += '%s\tgoto cleanup;\n' % indent
+    # 4) nss_core.c nr_frags: 描述符已写入 ring → 必须先回滚 DMA
+    elif 'nr_frags > MAX_SKB_FRAGS' in expr:
+        body += '%s\tnss_core_send_unwind_dma(nss_ctx->dev, desc_if, hlos_index, 1, is_fraglist);\n' % indent
+        body += '%s\treturn -1;\n' % indent
+    else:
+        body += '%s\t%s\n' % (indent, ret)
+
+    body += '%s}' % indent
+    return body
 
 
 def main():
