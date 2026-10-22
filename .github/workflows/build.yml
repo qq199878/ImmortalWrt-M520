@@ -131,6 +131,7 @@ jobs:
         with:
           name: nss-kmods
           path: |
+            bin/targets/ipq806x/generic/packages/kmod-qca-nss-*.apk
             bin/targets/ipq806x/generic/packages/*.ipk
             bin/targets/ipq806x/generic/kmods/**/*.ko
           if-no-files-found: warn
