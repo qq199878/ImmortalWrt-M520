@@ -102,6 +102,18 @@ jobs:
           echo "===== defconfig 后的 package/qca 项 ====="
           grep -E 'CONFIG_PACKAGE.*qca' .config || echo "(无 qca 项)"
 
+      - name: 预置 NSS 源码包（避免重新 clone 导致 hash 不匹配）
+        run: |
+          mkdir -p dl
+          if [ -d nss-dl ]; then
+            cp -v nss-dl/*.tar.zst dl/ || true
+          else
+            echo "WARNING: nss-dl 目录缺失"
+          fi
+          echo "===== dl 中 NSS 包 ====="
+          ls -lh dl/qca-nss-*.tar.zst 2>/dev/null || echo "(无)"
+          echo "===== sha256 校验 ====="
+          sha256sum dl/qca-nss-*.tar.zst 2>/dev/null || true
       - name: 下载源码包
         run: |
           make -j$(nproc) download || true
