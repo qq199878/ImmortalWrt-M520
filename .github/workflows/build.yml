@@ -16,6 +16,10 @@ on:
       - 'configs/**'
       - 'feeds.conf'
       - '.github/workflows/**'
+      - 'target/linux/**'
+      - 'package/qca-nss/**'
+      - 'package/kernel/qca-nss-dp/**'
+      - 'nss-dl/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
