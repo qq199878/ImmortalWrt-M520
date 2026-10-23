@@ -88,6 +88,11 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: 修复 nginx-util CMake 版本
+        run: |
+          sed -i "s/VERSION 3.30/VERSION 3.28/" feeds/packages/net/nginx-util/src/CMakeLists.txt
+          grep -n cmake_minimum_required feeds/packages/net/nginx-util/src/CMakeLists.txt
+
       - name: 载入配置
         run: |
           set -x
