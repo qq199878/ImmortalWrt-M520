@@ -64,7 +64,24 @@ jobs:
             libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
             ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
             python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
-            upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
+            upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd libarchive-tools
+
+      - name: 配置兼容 tar
+        run: |
+          cat > "$GITHUB_WORKSPACE/ci-tar-wrapper" <<'EOF'
+          #!/bin/sh
+          # 解包使用 BSD tar；源码归档创建/追加使用 GNU tar。
+          for arg in "$@"; do
+            case "$arg" in
+              --create|--append|--concatenate|--update|--ignore-failed-read|-c|-c*|-r|-r*|-A|-u)
+                exec /usr/bin/tar "$@"
+                ;;
+            esac
+          done
+          exec /usr/bin/bsdtar "$@"
+          EOF
+          chmod +x "$GITHUB_WORKSPACE/ci-tar-wrapper"
+          "$GITHUB_WORKSPACE/ci-tar-wrapper" --version
 
       - name: 更新并安装 feeds
         run: |
@@ -125,13 +142,13 @@ jobs:
           sha256sum dl/qca-nss-*.tar.zst 2>/dev/null || true
       - name: 下载源码包
         run: |
-          make -j$(nproc) download || true
+          make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j$(nproc) download || true
 
       - name: 预检内核补丁
         run: |
           set -o pipefail
           echo "===== 预检 target/linux/prepare ====="
-          make target/linux/prepare V=s -j1 2>&1 | tee prepare.log
+          make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" target/linux/prepare V=s -j1 2>&1 | tee prepare.log
           RC="${PIPESTATUS[0]}"
           echo "target/linux/prepare 返回码: $RC"
           exit "$RC"
@@ -150,18 +167,18 @@ jobs:
           TARGET="${{ github.event.inputs.target_pkg }}"
           if [ -n "$TARGET" ]; then
             echo "只编译: $TARGET"
-            make -j$(nproc) "$TARGET" V=s 2>&1 | tee build.log
+            make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j$(nproc) "$TARGET" V=s 2>&1 | tee build.log
             RC="${PIPESTATUS[0]}"
             echo "目标编译返回码: $RC"
             exit "$RC"
           fi
 
           echo "全量编译"
-          make -j$(nproc) V=s 2>&1 | tee build.log
+          make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j$(nproc) V=s 2>&1 | tee build.log
           RC="${PIPESTATUS[0]}"
           if [ "$RC" -ne 0 ]; then
             echo "并行编译失败，返回码: $RC；改用 -j1 V=s 重试"
-            make -j1 V=s 2>&1 | tee -a build.log
+            make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j1 V=s 2>&1 | tee -a build.log
             RC="${PIPESTATUS[0]}"
           fi
           echo "最终编译返回码: $RC"
