@@ -122,6 +122,23 @@ jobs:
         run: |
           make -j$(nproc) download || true
 
+      - name: 预检内核补丁
+        run: |
+          set -o pipefail
+          echo "===== 预检 target/linux/prepare ====="
+          make target/linux/prepare V=s -j1 2>&1 | tee prepare.log
+          RC="${PIPESTATUS[0]}"
+          echo "target/linux/prepare 返回码: $RC"
+          exit "$RC"
+
+      - name: 上传预检日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepare-log
+          path: prepare.log
+          if-no-files-found: warn
+
       - name: 编译固件
         run: |
           set -o pipefail
@@ -129,11 +146,21 @@ jobs:
           if [ -n "$TARGET" ]; then
             echo "只编译: $TARGET"
             make -j$(nproc) "$TARGET" V=s 2>&1 | tee build.log
-          else
-            echo "全量编译"
-            make -j$(nproc) 2>&1 | tee build.log || make -j1 V=s 2>&1 | tee -a build.log
+            RC="${PIPESTATUS[0]}"
+            echo "目标编译返回码: $RC"
+            exit "$RC"
           fi
 
+          echo "全量编译"
+          make -j$(nproc) V=s 2>&1 | tee build.log
+          RC="${PIPESTATUS[0]}"
+          if [ "$RC" -ne 0 ]; then
+            echo "并行编译失败，返回码: $RC；改用 -j1 V=s 重试"
+            make -j1 V=s 2>&1 | tee -a build.log
+            RC="${PIPESTATUS[0]}"
+          fi
+          echo "最终编译返回码: $RC"
+          exit "$RC"
       - name: 上传编译日志
         if: always()
         uses: actions/upload-artifact@v4
