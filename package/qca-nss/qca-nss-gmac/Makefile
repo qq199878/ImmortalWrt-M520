@@ -1,17 +1,12 @@
-# NHSS.QSDK.12.1.r5_CS1
-# by SqTER
-
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=qca-nss-gmac
 PKG_RELEASE:=1
 
-PKG_SOURCE_URL:=https://git.codelinaro.org/clo/qsdk/oss/lklm/nss-gmac.git
+PKG_SOURCE_URL:=https://git.codelinaro.org/clo/qsdk/oss/lklm/nss-gmac
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_DATE:=2023-06-01
-PKG_SOURCE_VERSION:=171767947467662f2407d0cfff26dfb136c3fb4a
-PKG_MIRROR_HASH:=1f8b03e8fa862feaa4efaf26a4b0ac68466b613a27c0372df10df1b50f9125da
+PKG_SOURCE_VERSION:=9b74deef2816d91e58926e6fab7a6ff931eb3b22
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -19,10 +14,10 @@ define KernelPackage/qca-nss-gmac
   SECTION:=kernel
   CATEGORY:=Kernel modules
   SUBMENU:=Network Devices
-  DEPENDS:=@TARGET_ipq806x||TARGET_ipq_ipq806x
+  DEPENDS:=@TARGET_ipq806x||TARGET_ipq_ipq806x @!LINUX_3_18
   TITLE:=Kernel driver for NSS gmac
   FILES:=$(PKG_BUILD_DIR)/ipq806x/qca-nss-gmac.ko
-  AUTOLOAD:=$(call AutoLoad,31,qca-nss-gmac,1)
+  AUTOLOAD:=$(call AutoLoad,31,qca-nss-gmac)
 endef
 
 define KernelPackage/qca-nss-gmac/Description
@@ -35,14 +30,14 @@ define Build/InstallDev
 endef
 
 EXTRA_CFLAGS+= \
-	-DCONFIG_NSS_DEBUG_LEVEL=0 \
-	-Wno-missing-prototypes -Wno-missing-declarations \
+	-DCONFIG_NSS_DEBUG_LEVEL=4 \
 	-I$(PKG_BUILD_DIR)/nss_hal/include \
 	-I$(PKG_BUILD_DIR)/nss_hal/$(BOARD)
 
 define Build/Compile
-	$(KERNEL_MAKE) \
-		SUBDIRS="$(PKG_BUILD_DIR)" \
+	$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" \
+		$(KERNEL_MAKE_FLAGS) \
+		$(PKG_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)" \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 		modules

@@ -6,7 +6,7 @@ on:
       config_file:
         description: 'configs/ 下的配置文件'
         required: false
-        default: 'm520-nss.config'
+        default: 'm520-web-minimal.config'
       target_pkg:
         description: '只编译指定包（留空=全量编译）'
         required: false
@@ -74,15 +74,20 @@ jobs:
       - name: 载入配置
         run: |
           set -x
-          RAW="${{ github.event.inputs.config_file }}"
-          echo "原始输入 config_file = [$RAW]"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW="${{ github.event.inputs.config_file }}"
+            if [ -z "$RAW" ]; then
+              RAW="m520-web-minimal.config"
+            fi
+          else
+            RAW="m520-web-minimal.config"
+          fi
+          echo "事件类型: ${{ github.event_name }}"
+          echo "最终原始配置输入 config_file = [$RAW]"
           echo "===== configs/ 目录内容 ====="
           ls -la configs/
           # 容错：允许用户填 m520-nss.config 或 configs/m520-nss.config
           NAME="$RAW"
-          if [ -z "$NAME" ]; then
-            NAME="m520-nss.config"
-          fi
           NAME="${NAME#configs/}"
           CFG="configs/$NAME"
           echo "最终使用配置: $CFG"

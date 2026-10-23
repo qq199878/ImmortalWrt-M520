@@ -52,30 +52,7 @@
  
  	return ret;
  }
-@@ -761,6 +759,7 @@ static uint32_t nss_gmac_tstamp_ioctl(st
- {
- 	struct hwtstamp_config cfg;
- 	struct nss_gmac_dev *gmacdev = (struct nss_gmac_dev *)netdev_priv(netdev);
-+	int ret = -EINVAL;
- 
- 	/*
- 	 * Return if NSS FW is not up
-@@ -769,9 +768,11 @@ static uint32_t nss_gmac_tstamp_ioctl(st
- 		netdev_dbg(netdev, "%s: NSS Firmware is not up. Cannot enable Timestamping  \n", __func__);
- 		return -EINVAL;
- 	}
--
--	copy_from_user(&cfg, ifr->ifr_data, sizeof(cfg));
--
-+	ret = copy_from_user(&cfg, ifr->ifr_data, sizeof(cfg));
-+	if (ret) {
-+		netdev_err(netdev, "%s: Unable to copy NSS Firmware into memory \n", __func__);
-+		return -EINVAL;
-+	}
- 	/*
- 	 * Enable Timestamping if not already enabled
- 	 */
-@@ -951,7 +952,7 @@ static const struct net_device_ops nss_g
+@@ -951,7 +949,7 @@ static const struct net_device_ops nss_g
   * @param[in] pointer to advertised features
   * @return void
   */
@@ -84,34 +61,7 @@
  {
  	*supp |= NSS_GMAC_SUPPORTED_FEATURES;
  	*adv |= NSS_GMAC_ADVERTISED_FEATURES;
-@@ -1100,7 +1101,7 @@ static int32_t nss_gmac_do_common_init(s
- 	ctx.msm_clk_ctl_enabled = true;
- #endif
- 
--	ctx.nss_base = (uint8_t *)ioremap_nocache(res_nss_base.start,
-+	ctx.nss_base = (uint8_t *)ioremap(res_nss_base.start,
- 						  resource_size(&res_nss_base));
- 	if (!ctx.nss_base) {
- 		pr_info("Error mapping NSS GMAC registers\n");
-@@ -1109,7 +1110,7 @@ static int32_t nss_gmac_do_common_init(s
- 	}
- 	pr_debug("%s: NSS base ioremap OK.\n", __func__);
- 
--	ctx.qsgmii_base = (uint32_t *)ioremap_nocache(res_qsgmii_base.start,
-+	ctx.qsgmii_base = (uint32_t *)ioremap(res_qsgmii_base.start,
- 					      resource_size(&res_qsgmii_base));
- 	if (!ctx.qsgmii_base) {
- 		pr_info("Error mapping QSGMII registers\n");
-@@ -1119,7 +1120,7 @@ static int32_t nss_gmac_do_common_init(s
- 	pr_debug("%s: QSGMII base ioremap OK, vaddr = 0x%p\n",
- 						__func__, ctx.qsgmii_base);
- 
--	ctx.clk_ctl_base = (uint32_t *)ioremap_nocache(res_clk_ctl_base.start,
-+	ctx.clk_ctl_base = (uint32_t *)ioremap(res_clk_ctl_base.start,
- 				       resource_size(&res_clk_ctl_base));
- 	if (!ctx.clk_ctl_base) {
- 		pr_info("Error mapping Clk control registers\n");
-@@ -1409,8 +1410,8 @@ static int32_t nss_gmac_probe(struct pla
+@@ -1409,8 +1407,8 @@ static int32_t nss_gmac_probe(struct pla
  			goto nss_gmac_phy_attach_fail;
  		}
  
@@ -122,7 +72,7 @@
  		gmacdev->phydev->irq = PHY_POLL;
  		netdev_dbg(netdev, "PHY %s attach OK\n", phy_id);
  
-@@ -1440,6 +1441,8 @@ static int32_t nss_gmac_probe(struct pla
+@@ -1440,6 +1438,8 @@ static int32_t nss_gmac_probe(struct pla
  		netdev_dbg(netdev, "%s MII_PHYSID2 - 0x%04x\n", netdev->name,
  		      nss_gmac_mii_rd_reg(gmacdev, gmacdev->phy_base, MII_PHYSID2));
  	} else if (gmacdev->phy_base != NSS_GMAC_NO_MDIO_PHY) {
@@ -133,17 +83,20 @@
  		 */
 --- a/ipq806x/nss_gmac_ethtool.c
 +++ b/ipq806x/nss_gmac_ethtool.c
-@@ -143,7 +143,8 @@ static const struct nss_gmac_ethtool_sta
+@@ -143,9 +143,9 @@ static const struct nss_gmac_ethtool_sta
  /**
   * @brief Array of strings describing private flag names
   */
 -static const char *gmac_strings_priv_flags[] = {
-+
-+static const char gmac_strings_priv_flags[][ETH_GSTRING_LEN] = {
- 	"linkpoll",
- 	"tstamp",
- 	"ignore_rx_csum_err",
-@@ -290,6 +291,7 @@ static int nss_gmac_set_pauseparam(struc
+-	"linkpoll",
+-	"tstamp",
++static const char *gmac_strings_priv_flags[][ETH_GSTRING_LEN] = {
++	{"linkpoll"},
++	{"tstamp"},
+ };
+ 
+ #define NSS_GMAC_STATS_LEN	ARRAY_SIZE(gmac_gstrings_stats)
+@@ -292,6 +292,7 @@ static int nss_gmac_set_pauseparam(struc
  {
  	struct nss_gmac_dev *gmacdev = (struct nss_gmac_dev *)netdev_priv(netdev);
  	struct phy_device *phydev;
@@ -151,7 +104,7 @@
  
  	BUG_ON(gmacdev == NULL);
  	BUG_ON(gmacdev->netdev != netdev);
-@@ -325,14 +327,15 @@ static int nss_gmac_set_pauseparam(struc
+@@ -327,14 +328,15 @@ static int nss_gmac_set_pauseparam(struc
  	phydev = gmacdev->phydev;
  
  	/* Update flow control advertisment */
@@ -170,7 +123,7 @@
  
  	genphy_config_aneg(gmacdev->phydev);
  
-@@ -392,12 +395,13 @@ static uint32_t nss_gmac_get_msglevel(st
+@@ -396,12 +398,13 @@ static uint32_t nss_gmac_get_msglevel(st
   * @param[in] pointer to struct net_device.
   * @param[in] pointer to struct ethtool_cmd.
   */
@@ -186,7 +139,7 @@
  
  	BUG_ON(gmacdev == NULL);
  
-@@ -409,10 +413,10 @@ static int32_t nss_gmac_get_settings(str
+@@ -413,10 +416,10 @@ static int32_t nss_gmac_get_settings(str
  	 */
  	if (!test_bit(__NSS_GMAC_LINKPOLL, &gmacdev->flags)) {
  		if (gmacdev->forced_speed != SPEED_UNKNOWN) {
@@ -201,7 +154,7 @@
  			return 0;
  		} else {
  			/* Non-link polled interfaced must have a forced
-@@ -426,56 +430,59 @@ static int32_t nss_gmac_get_settings(str
+@@ -429,63 +429,59 @@ static int32_t nss_gmac_get_settings(struct net_device *netdev,
  
  	/* update PHY status */
  	if (phydev->is_c45 == true) {
@@ -220,8 +173,15 @@
 +	bitmap_copy(elk->link_modes.advertising, phydev->advertising, __ETHTOOL_LINK_MODE_MASK_NBITS);
  
 -	ecmd->autoneg = phydev->autoneg;
--	ethtool_cmd_speed_set(ecmd, phydev->speed);
--	ecmd->duplex = phydev->duplex;
+-
+-	if (gmacdev->link_state == LINKDOWN) {
+-		ethtool_cmd_speed_set(ecmd, SPEED_UNKNOWN);
+-		ecmd->duplex = DUPLEX_UNKNOWN;
+-	} else {
+-		ethtool_cmd_speed_set(ecmd, phydev->speed);
+-		ecmd->duplex = phydev->duplex;
+-	}
+-
 -	ecmd->port = PORT_TP;
 -	ecmd->phy_address = gmacdev->phy_base;
 -	ecmd->transceiver = XCVR_EXTERNAL;
@@ -279,7 +239,7 @@
  
  	return 0;
  }
-@@ -485,8 +492,8 @@ static int32_t nss_gmac_get_settings(str
+@@ -489,8 +495,8 @@ static int32_t nss_gmac_get_settings(str
   * @param[in] pointer to struct net_device.
   * @param[in] pointer to struct ethtool_cmd.
   */
@@ -290,7 +250,7 @@
  {
  	struct nss_gmac_dev *gmacdev = (struct nss_gmac_dev *)netdev_priv(netdev);
  	struct phy_device *phydev = NULL;
-@@ -508,13 +515,13 @@ static int32_t nss_gmac_set_settings(str
+@@ -512,13 +518,13 @@ static int32_t nss_gmac_set_settings(str
  		return -EPERM;
  	}
  
@@ -306,7 +266,7 @@
  }
  
  /**
-@@ -592,8 +599,8 @@ struct ethtool_ops nss_gmac_ethtool_ops
+@@ -580,8 +586,8 @@ struct ethtool_ops nss_gmac_ethtool_ops
  	.set_pauseparam = &nss_gmac_set_pauseparam,
  	.nway_reset = &nss_gmac_nway_reset,
  	.get_wol = &nss_gmac_get_wol,
@@ -317,29 +277,3 @@
  	.get_strings = &nss_gmac_get_strings,
  	.get_sset_count = &nss_gmac_get_strset_count,
  	.get_ethtool_stats = &nss_gmac_get_ethtool_stats,
---- a/ipq806x/nss_gmac_dev.c
-+++ b/ipq806x/nss_gmac_dev.c
-@@ -1585,7 +1585,7 @@ int32_t nss_gmac_attach(struct nss_gmac_
- 	}
- 
- 	/* ioremap addresses */
--	gmacdev->mac_base = ioremap_nocache(reg_base,
-+	gmacdev->mac_base = ioremap(reg_base,
- 						      NSS_GMAC_REG_BLOCK_LEN);
- 	if (!gmacdev->mac_base) {
- 		netdev_dbg(netdev, "ioremap fail.\n");
---- a/ipq806x/nss_gmac_tx_rx_offload.c
-+++ b/ipq806x/nss_gmac_tx_rx_offload.c
-@@ -1027,8 +1027,10 @@ int nss_gmac_close(struct net_device *ne
- 	nss_gmac_disable_interrupt_all(gmacdev);
- 	gmacdev->data_plane_ops->link_state(gmacdev->data_plane_ctx, 0);
- 
--	if (!IS_ERR(gmacdev->phydev))
--		phy_stop(gmacdev->phydev);
-+	if (!IS_ERR(gmacdev->phydev)) {
-+		if (test_bit(__NSS_GMAC_LINKPOLL, &gmacdev->flags))
-+			phy_stop(gmacdev->phydev);
-+	}
- 
- 	clear_bit(__NSS_GMAC_UP, &gmacdev->flags);
- 	clear_bit(__NSS_GMAC_CLOSING, &gmacdev->flags);

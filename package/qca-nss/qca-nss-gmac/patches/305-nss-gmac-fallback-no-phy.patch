@@ -1,0 +1,21 @@
+--- a/ipq806x/nss_gmac_ctrl.c
++++ b/ipq806x/nss_gmac_ctrl.c
+@@ -1407,5 +1407,13 @@
+ 		if (IS_ERR(gmacdev->phydev)) {
+-			netdev_dbg(netdev, "PHY %s attach FAIL\n", phy_id);
+-			ret = -EIO;
+-			goto nss_gmac_phy_attach_fail;
++			/*
++			 * No usable PHY at the DT-provided MDIO address. When the MAC
++			 * is wired to a DSA switch or uses fixed-link, the DT may still
++			 * carry a qcom,phy-mdio-addr that does not resolve. Fall back to
++			 * the no-PHY path instead of failing probe, otherwise the
++			 * conduit netdev never appears and DSA cannot bring the switch
++			 * up at all.
++			 */
++			pr_info("nss-gmac: PHY %s not found, continue without PHY\n", phy_id);
++			gmacdev->phydev = ERR_PTR(-ENODEV);
++			SET_NETDEV_DEV(netdev, &pdev->dev);
+ 		}
+ 	} else {
+ 		/* no phy was connected or attached */
