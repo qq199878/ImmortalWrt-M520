@@ -1,0 +1,341 @@
+--- a/ipq806x/nss_gmac_ctrl.c
++++ b/ipq806x/nss_gmac_ctrl.c
+@@ -1157,6 +1157,41 @@
+ 	return ret;
+ }
+ 
++static void nss_gmac_cleanup(struct nss_gmac_dev *gmacdev,
++				     bool netdev_registered)
++{
++	struct net_device *netdev;
++
++	if (!gmacdev)
++		return;
++
++	netdev = gmacdev->netdev;
++	cancel_delayed_work_sync(&gmacdev->gmacwork);
++
++	if (netdev_registered && netdev) {
++		nss_gmac_tstamp_sysfs_remove(netdev);
++		unregister_netdev(netdev);
++	}
++
++	if (gmacdev->phydev && !IS_ERR(gmacdev->phydev))
++		phy_disconnect(gmacdev->phydev);
++	gmacdev->phydev = NULL;
++
++#ifdef RUMI_EMULATION_SUPPORT
++	if (gmacdev->miibus)
++		nss_gmac_deinit_mdiobus(gmacdev);
++#endif
++
++	nss_gmac_detach(gmacdev);
++
++	if (gmacdev->ctx && gmacdev->macid < NSS_MAX_GMACS &&
++	    gmacdev->ctx->nss_gmac[gmacdev->macid] == gmacdev)
++		gmacdev->ctx->nss_gmac[gmacdev->macid] = NULL;
++
++	if (gmacdev->pdev && platform_get_drvdata(gmacdev->pdev) == gmacdev)
++		platform_set_drvdata(gmacdev->pdev, NULL);
++}
++
+ /**
+  * @brief Function to initialize the Linux network interface.
+  * Linux dependent Network interface is setup here. This provides
+@@ -1170,6 +1205,7 @@
+ 	struct msm_nss_gmac_platform_data *gmaccfg = NULL;
+ 	struct nss_gmac_dev *gmacdev = NULL;
+ 	int32_t ret = 0;
++	bool netdev_registered = false;
+ 	phy_interface_t phyif = 0;
+ 	uint8_t phy_id[MII_BUS_ID_SIZE + 3];
+ #ifdef CONFIG_OF
+@@ -1209,12 +1245,20 @@
+ 
+ 	gmacdev->pdev = pdev;
+ 	gmacdev->netdev = netdev;
++	gmacdev->ctx = &ctx;
++	platform_set_drvdata(pdev, gmacdev);
++	INIT_DELAYED_WORK(&gmacdev->gmacwork, nss_gmac_open_work);
+ 	gmacdev->loop_back_mode = NOLOOPBACK;
+ 
+ #ifdef CONFIG_OF
+ 	np = of_node_get(pdev->dev.of_node);
+ 	ret = nss_gmac_of_get_pdata(np, netdev, &gmaccfg_devicetree);
+ 	if (ret != 0) {
++		if (np) {
++			of_node_put(np);
++			np = NULL;
++		}
++		nss_gmac_cleanup(gmacdev, netdev_registered);
+ 		free_netdev(netdev);
+ 		return ret;
+ 	}
+@@ -1249,9 +1293,16 @@
+ 		gmacdev->forced_duplex = gmaccfg->forced_duplex;
+ 	}
+ 
+-	/* save global context within each GMAC context */
+-	gmacdev->ctx = &ctx;
+-
++	/* Keep the global slot valid during per-GMAC initialization. */
++	if (gmacdev->macid >= NSS_MAX_GMACS) {
++		ret = -EINVAL;
++		goto nss_gmac_probe_fail;
++	}
++	if (ctx.nss_gmac[gmacdev->macid] &&
++	    ctx.nss_gmac[gmacdev->macid] != gmacdev) {
++		ret = -EBUSY;
++		goto nss_gmac_probe_fail;
++	}
+ 	ctx.nss_gmac[gmacdev->macid] = gmacdev;
+ 
+ 	/* Init for individual GMACs */
+@@ -1262,7 +1313,7 @@
+ 			    1) < 0) {
+ 		netdev_dbg(netdev, "attach failed for %s\n", netdev->name);
+ 		ret = -EIO;
+-		goto nss_gmac_attach_fail;
++		goto nss_gmac_probe_fail;
+ 	}
+ 
+ #ifndef RUMI_EMULATION_SUPPORT
+@@ -1271,14 +1322,14 @@
+ 	if (!prop) {
+ 		netdev_dbg(netdev, "cannot get 'mdiobus' property\n");
+ 		ret = -EIO;
+-		goto mdiobus_init_fail;
++		goto nss_gmac_probe_fail;
+ 	}
+ 
+ 	mdio_node = of_find_node_by_phandle(be32_to_cpup(prop));
+ 	if (!mdio_node) {
+ 		netdev_dbg(netdev, "cannot find mdio node by phandle\n");
+ 		ret = -EIO;
+-		goto mdiobus_init_fail;
++		goto nss_gmac_probe_fail;
+ 	}
+ 
+ 	mdio_plat = of_find_device_by_node(mdio_node);
+@@ -1286,7 +1337,7 @@
+ 		netdev_dbg(netdev, "cannot find platform device from mdio node\n");
+ 		of_node_put(mdio_node);
+ 		ret = -EIO;
+-		goto mdiobus_init_fail;
++		goto nss_gmac_probe_fail;
+ 	}
+ 
+ 	gmacdev->miibus = dev_get_drvdata(&mdio_plat->dev);
+@@ -1294,7 +1345,7 @@
+ 		netdev_dbg(netdev, "cannot get mii bus reference from device data\n");
+ 		of_node_put(mdio_node);
+ 		ret = -EIO;
+-		goto mdiobus_init_fail;
++		goto nss_gmac_probe_fail;
+ 	}
+ #else
+ 	snprintf(busid, MII_BUS_ID_SIZE, "%s.%d", IPQ806X_MDIO_BUS_NAME,
+@@ -1304,14 +1355,14 @@
+ 	if (!miidev) {
+ 		netdev_dbg(netdev, "mdio bus '%s' get FAIL.\n", busid);
+ 		ret = -EIO;
+-		goto mdiobus_init_fail;
++		goto nss_gmac_probe_fail;
+ 	}
+ 
+ 	gmacdev->miibus = dev_get_drvdata(miidev);
+ 	if (!gmacdev->miibus) {
+ 		netdev_dbg(netdev, "mdio bus '%s' get FAIL.\n", busid);
+ 		ret = -EIO;
+-		goto mdiobus_init_fail;
++		goto nss_gmac_probe_fail;
+ 	}
+ #endif
+ 
+@@ -1321,7 +1372,7 @@
+ 		if (nss_gmac_init_mdiobus(gmacdev) != 0) {
+ 			netdev_dbg(netdev, "mdio bus register FAIL for emulation.\n");
+ 			ret = -EIO;
+-			goto mdiobus_init_fail;
++			goto nss_gmac_probe_fail;
+ 		}
+ 	}
+ 	netdev_dbg(netdev, "mdio bus '%s' register OK for emulation.\n",
+@@ -1350,9 +1401,6 @@
+ 	netdev->netdev_ops = &nss_gmac_netdev_ops;
+ 	nss_gmac_ethtool_register(netdev);
+ 
+-	/* Initialize workqueue */
+-	INIT_DELAYED_WORK(&gmacdev->gmacwork, nss_gmac_open_work);
+-
+ 	phyif = gmacdev->phy_mii_type;
+ 
+ 	/* create a phyid using MDIO bus id and MDIO bus address of phy */
+@@ -1367,7 +1415,7 @@
+ 				&nss_gmac_phy_fixup);
+ 		if (ret	!= 0) {
+ 			netdev_dbg(netdev, "PHY fixup register Error.\n");
+-			goto nss_gmac_phy_attach_fail;
++			goto nss_gmac_probe_fail;
+ 		}
+ 	}
+ 
+@@ -1384,7 +1432,7 @@
+ 		if (IS_ERR(gmacdev->phydev)) {
+ 			netdev_dbg(netdev, "PHY %s attach FAIL\n", phy_id);
+ 			ret = -EIO;
+-			goto nss_gmac_phy_attach_fail;
++			goto nss_gmac_probe_fail;
+ 		}
+ 
+ 		nss_gmac_update_features(gmacdev->phydev->supported,
+@@ -1469,8 +1517,9 @@
+ 		netdev_dbg(netdev, "Error registering netdevice %s\n",
+ 			      netdev->name);
+ 		ret = -EFAULT;
+-		goto nss_gmac_reg_fail;
+-	}
++		goto nss_gmac_probe_fail;
++	}
++	netdev_registered = true;
+ 
+ 	/* GRO disabled by default */
+ 	rtnl_lock();
+@@ -1508,31 +1557,16 @@
+ #endif
+ 	return 0;
+ 
+-nss_gmac_reg_fail:
+-	unregister_netdev(gmacdev->netdev);
+-
+-	if (!IS_ERR(gmacdev->phydev)) {
+-		phy_disconnect(gmacdev->phydev);
+-		gmacdev->phydev = NULL;
+-	}
+-
+-nss_gmac_phy_attach_fail:
+-#ifdef RUMI_EMULATION_SUPPORT
+-	nss_gmac_deinit_mdiobus(gmacdev);
+-#endif
+-
+-mdiobus_init_fail:
+-	nss_gmac_detach(gmacdev);
+-
+-nss_gmac_attach_fail:
+-	free_netdev(netdev);
++nss_gmac_probe_fail:
++	nss_gmac_cleanup(gmacdev, netdev_registered);
+ 
+ #ifdef CONFIG_OF
+-	if (pdev->dev.of_node) {
++	if (np) {
+ 		of_node_put(np);
+ 		np = NULL;
+ 	}
+ #endif
++	free_netdev(netdev);
+ 	return ret;
+ }
+ 
+@@ -1544,11 +1578,15 @@
+  */
+ static void nss_gmac_remove(struct platform_device *pdev)
+ {
+-	/*
+-	 * All remove has been done in nss_gmac_exit_network_interfaces
+-	 * Just return success here
+-	 */
+-	return;
++	struct nss_gmac_dev *gmacdev = platform_get_drvdata(pdev);
++	struct net_device *netdev;
++
++	if (!gmacdev)
++		return;
++
++	netdev = gmacdev->netdev;
++	nss_gmac_cleanup(gmacdev, true);
++	free_netdev(netdev);
+ }
+ 
+ static struct of_device_id nss_gmac_dt_ids[] = {
+@@ -1613,22 +1651,14 @@
+ {
+ 	uint32_t i;
+ 	struct nss_gmac_dev *gmacdev;
++	struct net_device *netdev;
+ 
+ 	for (i = 0; i < NSS_MAX_GMACS; i++) {
+ 		gmacdev = ctx.nss_gmac[i];
+ 		if (gmacdev) {
+-			if (!IS_ERR(gmacdev->phydev)) {
+-				phy_disconnect(gmacdev->phydev);
+-				gmacdev->phydev = NULL;
+-			}
+-#ifdef RUMI_EMULATION_SUPPORT
+-			nss_gmac_deinit_mdiobus(gmacdev);
+-#endif
+-			nss_gmac_tstamp_sysfs_remove(gmacdev->netdev);
+-			unregister_netdev(gmacdev->netdev);
+-			free_netdev(gmacdev->netdev);
+-			nss_gmac_detach(gmacdev);
+-			ctx.nss_gmac[i] = NULL;
++			netdev = gmacdev->netdev;
++			nss_gmac_cleanup(gmacdev, true);
++			free_netdev(netdev);
+ 		}
+ 	}
+ }
+@@ -1639,8 +1669,8 @@
+  */
+ void __exit nss_gmac_deregister_driver(void)
+ {
++	platform_driver_unregister(&nss_gmac_drv);
+ 	nss_gmac_exit_network_interfaces();
+-	platform_driver_unregister(&nss_gmac_drv);
+ 
+ 	if (ctx.gmac_workqueue) {
+ 		destroy_workqueue(ctx.gmac_workqueue);
+--- a/ipq806x/nss_gmac_dev.c
++++ b/ipq806x/nss_gmac_dev.c
+@@ -1589,6 +1589,7 @@
+ 						      NSS_GMAC_REG_BLOCK_LEN);
+ 	if (!gmacdev->mac_base) {
+ 		netdev_dbg(netdev, "ioremap fail.\n");
++		nss_gmac_detach(gmacdev);
+ 		return -EIO;
+ 	}
+ 
+@@ -1609,16 +1610,23 @@
+  */
+ void nss_gmac_detach(struct nss_gmac_dev *gmacdev)
+ {
+-	uint32_t reglen;
+-
+-	reglen = gmacdev->memres->end - gmacdev->memres->start + 1;
+-	iounmap((void *)gmacdev->mac_base);
+-	release_mem_region((gmacdev->memres)->start, reglen);
+-
+-	gmacdev->memres = NULL;
+-
+-	gmacdev->mac_base = 0;
+-	gmacdev->dma_base = 0;
++	resource_size_t reglen;
++
++	if (!gmacdev)
++		return;
++
++	if (gmacdev->mac_base) {
++		iounmap((void *)gmacdev->mac_base);
++		gmacdev->mac_base = NULL;
++	}
++
++	if (gmacdev->memres) {
++		reglen = resource_size(gmacdev->memres);
++		release_mem_region(gmacdev->memres->start, reglen);
++		gmacdev->memres = NULL;
++	}
++
++	gmacdev->dma_base = NULL;
+ }
+ 
+ 

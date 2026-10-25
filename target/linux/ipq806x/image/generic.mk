@@ -527,9 +527,9 @@ endef
 TARGET_DEVICES += qcom_ipq8064-db149
 
 define Device/ruijie_rg-mtfi-m520
-	$(Device/dsa-migration)
 	DEVICE_VENDOR := Ruijie
 	DEVICE_MODEL := RG-MTFi-M520
+	DEVICE_COMPAT_VERSION := 1.0
 	SOC := qcom-ipq8064
 	BLOCKSIZE := 64k
 	KERNEL_SIZE := 4096k
@@ -542,7 +542,10 @@ define Device/ruijie_rg-mtfi-m520
 	DEVICE_PACKAGES := -kmod-ath10k-ct kmod-ath10k ath10k-firmware-qca988x \
 		kmod-hwmon-lm75 kmod-rtc-pcf8563 kmod-ramoops uboot-envtools \
 		kmod-fs-f2fs losetup mkf2fs \
-		kmod-qca-nss-gmac kmod-qca-nss-drv kmod-qca-nss-ecm-standard
+		kmod-qca-nss-gmac kmod-qca-nss-drv kmod-qca-nss-ecm-standard \
+		kmod-nss-ifb kmod-qca-nss-drv-igs kmod-qca-nss-drv-pppoe \
+		kmod-qca-nss-drv-qdisc \
+		kmod-swconfig swconfig kmod-switch-ar8xxx
 endef
 TARGET_DEVICES += ruijie_rg-mtfi-m520
 

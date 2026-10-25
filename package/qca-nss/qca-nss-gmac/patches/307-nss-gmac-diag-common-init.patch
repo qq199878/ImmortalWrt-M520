@@ -1,0 +1,59 @@
+diff --git a/ipq806x/nss_gmac_ctrl.c b/ipq806x/nss_gmac_ctrl.c
+--- a/ipq806x/nss_gmac_ctrl.c
++++ b/ipq806x/nss_gmac_ctrl.c
+@@ -1028,18 +1028,37 @@
+-	common_device_node = of_find_node_by_name(NULL, NSS_GMAC_COMMON_DEVICE_NODE);
+-	if (!common_device_node) {
+-		pr_info("Cannot find device tree node "NSS_GMAC_COMMON_DEVICE_NODE" \n");
+-		ret = -EFAULT;
+-		goto nss_gmac_cmn_init_fail;
+-	}
+-	if (of_address_to_resource(common_device_node, 0, &res_nss_base) != 0) {
+-		ret = -EFAULT;
+-		goto nss_gmac_cmn_init_fail;
+-	}
+-	if (of_address_to_resource(common_device_node, 1, &res_qsgmii_base) != 0) {
+-		ret = -EFAULT;
+-		goto nss_gmac_cmn_init_fail;
+-	}
+-	if (of_address_to_resource(common_device_node, 2, &res_clk_ctl_base) != 0) {
+-		ret = -EFAULT;
+-		goto nss_gmac_cmn_init_fail;
+-	}
++	common_device_node = of_find_node_by_name(NULL, NSS_GMAC_COMMON_DEVICE_NODE);
++	if (!common_device_node) {
++		pr_info("Cannot find device tree node "NSS_GMAC_COMMON_DEVICE_NODE" \n");
++		ret = -EFAULT;
++		goto nss_gmac_cmn_init_fail;
++	pr_err("NSS_GMAC_DIAG: found node full_name=%s\n",
++		common_device_node->full_name ? common_device_node->full_name : "(null)");
++	{
++		struct device_node *pp = common_device_node->parent;
++		pr_err("NSS_GMAC_DIAG: parent full_name=%s\n",
++			(pp && pp->full_name) ? pp->full_name : "(null)");
++	}
++	}
++	if (of_address_to_resource(common_device_node, 0, &res_nss_base) != 0) {
++		pr_err("NSS_GMAC_DIAG: of_address_to_resource index=0 FAILED\n");
++		ret = -EFAULT;
++		goto nss_gmac_cmn_init_fail;
++	pr_err("NSS_GMAC_DIAG: res[0] start=0x%llx size=0x%llx\n",
++		(unsigned long long)res_nss_base.start,
++		(unsigned long long)resource_size(&res_nss_base));
++	}
++	if (of_address_to_resource(common_device_node, 1, &res_qsgmii_base) != 0) {
++		pr_err("NSS_GMAC_DIAG: of_address_to_resource index=1 FAILED\n");
++		ret = -EFAULT;
++		goto nss_gmac_cmn_init_fail;
++	pr_err("NSS_GMAC_DIAG: res[1] start=0x%llx size=0x%llx\n",
++		(unsigned long long)res_qsgmii_base.start,
++		(unsigned long long)resource_size(&res_qsgmii_base));
++	}
++	if (of_address_to_resource(common_device_node, 2, &res_clk_ctl_base) != 0) {
++		pr_err("NSS_GMAC_DIAG: of_address_to_resource index=2 FAILED\n");
++		ret = -EFAULT;
++		goto nss_gmac_cmn_init_fail;
++	pr_err("NSS_GMAC_DIAG: res[2] start=0x%llx size=0x%llx\n",
++		(unsigned long long)res_clk_ctl_base.start,
++		(unsigned long long)resource_size(&res_clk_ctl_base));
++	}

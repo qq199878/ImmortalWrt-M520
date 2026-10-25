@@ -28,6 +28,29 @@ function phy_path(name) {
 	return devpath;
 }
 
+/*
+ * Board-specific band lock.
+ * Some dual-band chips report both 2.4G and 5G bands on every PHY, so the
+ * generic auto-assignment cannot tell which PHY is wired to which antenna
+ * path. For the boards listed below, lock each PHY to the band that its PCIe
+ * slot actually drives. All other boards are unaffected.
+ */
+function board_band_lock(path) {
+	let board = "";
+	try {
+		board = trim(readfile("/tmp/sysinfo/board_name") ?? "");
+	} catch (e) {
+		return null;
+	}
+	if (board == "ruijie,rg-mtfi-m520") {
+		if (match(path, /1b500000[.]pcie/))
+			return "5G";
+		if (match(path, /1b700000[.]pcie/))
+			return "2G";
+	}
+	return null;
+}
+
 function cleanup() {
 	let wlan = board_data.wlan;
 
@@ -119,6 +142,7 @@ function wiphy_detect() {
 		}
 
 		let bands = info.bands;
+		let locked_band = board_band_lock(path);
 		for (let band in phy.wiphy_bands) {
 			if (!band || !band.freqs)
 				continue;
@@ -134,6 +158,8 @@ function wiphy_detect() {
 			else if (freq > 2000)
 				band_name = "2G";
 			else
+				continue;
+			if (locked_band != null && band_name != locked_band)
 				continue;
 			bands[band_name] = band_info;
 			if (band.ht_capa > 0)

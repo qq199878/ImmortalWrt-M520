@@ -1,4 +1,4 @@
-#!/bin/sh  /etc/rc.common
+#!/bin/sh /etc/rc.common
 #
 # Copyright (c) 2014, 2019 The Linux Foundation. All rights reserved.
 #
@@ -55,7 +55,8 @@ load_sfe() {
 load_ecm() {
 	[ -d /sys/module/ecm ] || {
 		insmod ecm front_end_selection=$(get_front_end_mode)
-        echo 1 > /sys/kernel/debug/ecm/ecm_classifier_default/accel_delay_pkts
+        echo 0 > /sys/kernel/debug/ecm/ecm_classifier_default/accel_delay_pkts
+        [ -f /sys/kernel/debug/ecm/ecm_classifier_dscp/enabled ] && echo 0 > /sys/kernel/debug/ecm/ecm_classifier_dscp/enabled
 	}
 
 	support_bridge && {
