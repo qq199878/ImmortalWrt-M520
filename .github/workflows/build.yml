@@ -53,6 +53,15 @@ jobs:
           sudo rm -rf "${AGENT_TOOLSDIRECTORY}" || true
           sudo apt-get clean
           df -h
+      - name: 配置大容量 Swap 虚拟内存（防止大型包 OOM）
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile || true
+          sudo fallocate -l 12G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=12288
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: 安装编译依赖
         run: |
@@ -145,9 +154,11 @@ jobs:
           ls -lh dl/qca-nss-*.tar.zst 2>/dev/null || echo "(无)"
           echo "===== sha256 校验 ====="
           sha256sum dl/qca-nss-*.tar.zst 2>/dev/null || true
-      - name: 下载源码包
+      - name: 下载源码包（含重试与坏包清理）
         run: |
           make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j$(nproc) download || true
+          find dl -size -1024c -exec rm -f {} \; || true
+          make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j2 download || true
 
       - name: 预检内核补丁
         run: |
@@ -179,11 +190,11 @@ jobs:
           fi
 
           echo "全量编译"
-          make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j$(nproc) V=s 2>&1 | tee build.log
+          make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j$(nproc) IGNORE_ERRORS=m V=s 2>&1 | tee build.log
           RC="${PIPESTATUS[0]}"
           if [ "$RC" -ne 0 ]; then
             echo "并行编译失败，返回码: $RC；改用 -j1 V=s 重试"
-            make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j1 V=s 2>&1 | tee -a build.log
+            make TAR="$GITHUB_WORKSPACE/ci-tar-wrapper" -j1 IGNORE_ERRORS=m V=s 2>&1 | tee -a build.log
             RC="${PIPESTATUS[0]}"
           fi
           echo "最终编译返回码: $RC"
@@ -241,9 +252,13 @@ jobs:
             bin/targets/ipq806x/generic/*.manifest
           if-no-files-found: warn
 
+      - name: 准备编译配置文件
+        if: always()
+        run: |
+          cp -f .config build.config 2>/dev/null || true
       - name: 上传编译配置
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-config
-          path: .config
+          path: build.config
