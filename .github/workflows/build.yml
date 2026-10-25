@@ -188,6 +188,29 @@ jobs:
           fi
           echo "最终编译返回码: $RC"
           exit "$RC"
+      - name: 提取并展示编译错误摘要
+        if: failure()
+        run: |
+          echo "## ❌ 编译构建失败排查报告" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f build.log ]; then
+            echo "### 🔍 关键错误匹配（最后 80 条）" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            grep -i -E "(error:|failed to build|Stop\.|No such file or directory|fatal error:)" build.log | tail -n 80 >> "$GITHUB_STEP_SUMMARY" || echo "(未匹配到特定错误关键词)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "### 📄 build.log 尾部最后 150 行原始日志" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 150 build.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "未找到 build.log 文件" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f prepare.log ]; then
+            echo "### 📄 prepare.log 尾部 30 行" >> "$GITHUB_STEP_SUMMARY"
+            echo '```text' >> "$GITHUB_STEP_SUMMARY"
+            tail -n 30 prepare.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: 上传编译日志
         if: always()
         uses: actions/upload-artifact@v4
@@ -219,6 +242,7 @@ jobs:
           if-no-files-found: warn
 
       - name: 上传编译配置
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-config
