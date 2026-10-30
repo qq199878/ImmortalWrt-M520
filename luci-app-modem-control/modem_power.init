@@ -1,0 +1,102 @@
+#!/bin/sh /etc/rc.common
+
+START=15
+USE_PROCD=1
+
+extra_command "status_json" "Get 4G modem power status in JSON"
+extra_command "power_on" "Turn on 4G modem"
+extra_command "power_off" "Turn off 4G modem"
+
+USB_DEV="/sys/bus/usb/devices/1-1"
+
+get_auth() {
+	if [ -f "$USB_DEV/authorized" ]; then
+		cat "$USB_DEV/authorized" 2>/dev/null
+	else
+		echo "-1"
+	fi
+}
+
+cleanup_modem_procs() {
+	# 终止正在访问模组节点（cdc-wdm / ttyUSB）的常见通信程序
+	killall -9 uqmi pppd chat comgt gcom 2>/dev/null
+
+	# 扫描并清理命令参数包含模组设备节点的阻塞/挂起进程
+	local pids="$(ps w 2>/dev/null | grep -E "cdc-wdm|ttyUSB" | grep -vE "grep|modem_power" | awk '{print $1}')"
+	if [ -n "$pids" ]; then
+		kill -9 $pids 2>/dev/null
+	fi
+}
+
+power_off() {
+	# 关断前先彻底清理依赖模组串口/QMI的挂起进程，避免去授权后进程永久阻塞
+	cleanup_modem_procs
+
+	if [ -f "$USB_DEV/authorized" ]; then
+		echo 0 > "$USB_DEV/authorized"
+		# 关断后再清理一次，确保无任何断开瞬间产生的残留
+		cleanup_modem_procs
+		uci -q set modem.settings.enabled='0'
+		uci -q commit modem
+		logger -t modem_power "4G Modem (1-1) suspended / de-authorized (procs cleaned, config saved)"
+		return 0
+	else
+		cleanup_modem_procs
+		logger -t modem_power "4G Modem (1-1) device node not found"
+		return 1
+	fi
+}
+
+power_on() {
+	if [ -f "$USB_DEV/authorized" ]; then
+		echo 1 > "$USB_DEV/authorized"
+		uci -q set modem.settings.enabled='1'
+		uci -q commit modem
+		logger -t modem_power "4G Modem (1-1) powered on (config saved)"
+		return 0
+	else
+		logger -t modem_power "4G Modem (1-1) device node not found"
+		return 1
+	fi
+}
+
+status_json() {
+	local auth="$(get_auth)"
+	local dev_exist=0
+	local product="LONGSUNG U9300C SXNC"
+	local vendor="1c9e:9b3c"
+	local tty_count=0
+	local wwan_exist=0
+
+	if [ -d "$USB_DEV" ]; then
+		dev_exist=1
+		[ -f "$USB_DEV/product" ] && product="$(cat "$USB_DEV/product" 2>/dev/null)"
+		[ -f "$USB_DEV/idVendor" ] && vendor="$(cat "$USB_DEV/idVendor" 2>/dev/null):$(cat "$USB_DEV/idProduct" 2>/dev/null)"
+	fi
+
+	tty_count=$(ls -d /dev/ttyUSB* 2>/dev/null | wc -l)
+	[ -e /sys/class/net/wwan0 ] && wwan_exist=1
+
+	printf '{"exists":%d,"authorized":%s,"tty_count":%d,"wwan_exist":%d,"product":"%s","vendor":"%s"}\n' \
+		"$dev_exist" "$auth" "$tty_count" "$wwan_exist" "$product" "$vendor"
+}
+
+start_service() {
+	config_load modem
+	local enabled
+	config_get enabled settings enabled '0'
+
+	if [ "$enabled" = "1" ]; then
+		power_on
+	else
+		power_off
+	fi
+}
+
+stop_service() {
+	power_off
+}
+
+service_triggers() {
+	procd_add_reload_trigger "modem"
+}

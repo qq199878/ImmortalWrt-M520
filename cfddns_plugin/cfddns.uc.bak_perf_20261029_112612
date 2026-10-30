@@ -1,0 +1,574 @@
+#!/usr/bin/env ucode
+
+'use strict';
+
+import { readfile, writefile, stat } from 'fs';
+
+const CONF      = '/etc/cfddns.conf';
+const SCRIPT    = '/etc/ddns-cf.sh';
+const CRONFILE  = '/etc/crontabs/root';
+const MARK      = 'ddns-cf';
+const CF_API    = 'https://api.cloudflare.com/client/v4';
+const RC_FILE   = '/tmp/cfddns.rc';
+const BODY_FILE = '/tmp/cfddns_body.json';
+
+// ---------------------------------------------------------------------
+// 工具函数
+// ---------------------------------------------------------------------
+
+function sh(cmd) {
+	system(cmd + ' > /tmp/cfddns.out 2>&1');
+	let out = '';
+	try {
+		out = readfile('/tmp/cfddns.out') || '';
+	} catch (e) {}
+	return trim(out);
+}
+
+// 解析 key='value' 形式的配置文件（不 eval，纯字符串处理）
+function load_conf() {
+	let cfg = {};
+	let raw = '';
+	try {
+		raw = readfile(CONF) || '';
+	} catch (e) {
+		return cfg;
+	}
+
+	let lines = split(raw, '\n');
+	for (let i = 0; i < length(lines); i++) {
+		let line = trim(lines[i]);
+		if (length(line) == 0 || substr(line, 0, 1) == '#')
+			continue;
+
+		let eq = index(line, '=');
+		if (eq <= 0)
+			continue;
+
+		let k = trim(substr(line, 0, eq));
+		let v = trim(substr(line, eq + 1));
+
+		// 去掉两端单/双引号
+		let n = length(v);
+		if (n >= 2) {
+			let c1 = substr(v, 0, 1);
+			let c2 = substr(v, n - 1, 1);
+			if ((c1 == "'" && c2 == "'") || (c1 == '"' && c2 == '"'))
+				v = substr(v, 1, n - 2);
+		}
+		cfg[k] = v;
+	}
+	return cfg;
+}
+
+// 按 key 就地改写配置，保留原有注释和顺序；新 key 追加到末尾
+function save_conf(patch) {
+	let raw = '';
+	try {
+		raw = readfile(CONF) || '';
+	} catch (e) {}
+
+	let lines = (length(raw) > 0) ? split(raw, '\n') : [];
+	let seen = {};
+
+	for (let i = 0; i < length(lines); i++) {
+		let t = trim(lines[i]);
+		if (length(t) == 0 || substr(t, 0, 1) == '#')
+			continue;
+		let eq = index(t, '=');
+		if (eq <= 0)
+			continue;
+		let k = trim(substr(t, 0, eq));
+		if (patch[k] != null) {
+			lines[i] = k + "='" + patch[k] + "'";
+			seen[k] = true;
+		}
+	}
+
+	for (let k in patch) {
+		if (!seen[k])
+			push(lines, k + "='" + patch[k] + "'");
+	}
+
+	try {
+		writefile(CONF, join('\n', lines) + '\n');
+	} catch (e) {
+		return false;
+	}
+
+	system('chmod 600 ' + CONF + ' >/dev/null 2>&1');
+	return true;
+}
+
+// Token 脱敏显示
+function mask_token(tk) {
+	let n = length(tk || '');
+	if (n == 0)
+		return '';
+	if (n < 16)
+		return '****';
+	return substr(tk, 0, 8) + '…' + substr(tk, n - 4, 4);
+}
+
+// 主机名 → 完整域名
+function to_fqdn(name, zone) {
+	name = trim(name || '');
+	zone = trim(zone || '');
+	if (length(name) == 0)
+		return '';
+	if (name == '@')
+		return zone;
+	if (length(zone) == 0)
+		return name;
+	if (name == zone)
+		return name;
+
+	// 已经带上了 zone 后缀就直接用（ucode 没有 ends_with，手工比对）
+	let suffix = '.' + zone;
+	let nl = length(name), sl = length(suffix);
+	if (nl > sl && substr(name, nl - sl, sl) == suffix)
+		return name;
+
+	return name + '.' + zone;
+}
+
+// 通用 Cloudflare API 调用
+// 返回 { ok: true, data: ... } 或 { ok: false, err: '...', err_code: n }
+function cf_call(method, path, body) {
+	let cfg = load_conf();
+	let tk = cfg.CF_TOKEN || '';
+	if (length(tk) == 0)
+		return { ok: false, err: '未配置 API Token，请先在页面上方填写并保存' };
+
+	let cmd = 'curl -s --max-time 20 -X ' + method + ' "' + CF_API + path + '"' +
+	          ' -H "Authorization: Bearer ' + tk + '"' +
+	          ' -H "Content-Type: application/json"';
+
+	if (body != null) {
+		try {
+			writefile(BODY_FILE, body);
+			cmd += ' --data @' + BODY_FILE;
+		} catch (e) {
+			return { ok: false, err: '构造请求体失败' };
+		}
+	}
+
+	let raw = sh(cmd);
+	system('rm -f ' + BODY_FILE + ' >/dev/null 2>&1');
+
+	if (length(raw) == 0)
+		return { ok: false, err: 'Cloudflare 无响应（网络不通或 Token 无效）' };
+
+	let r = json(raw);
+	if (r == null)
+		return { ok: false, err: 'Cloudflare 响应解析失败' };
+
+	if (!r.success) {
+		let msg = 'API 调用失败';
+		let code = 0;
+		if (r.errors != null && length(r.errors) > 0) {
+			if (r.errors[0].message != null)
+				msg = r.errors[0].message;
+			if (r.errors[0].code != null)
+				code = r.errors[0].code;
+		}
+		return { ok: false, err: msg, err_code: code };
+	}
+
+	return { ok: true, data: r.result };
+}
+
+// 读 WAN 接口上的本地 IPv4（注意：本机是运营商 NAT 内网地址）
+function get_iface_ip(iface) {
+	if (!iface || length(iface) == 0)
+		return '';
+	let out = sh('ip -4 addr show dev ' + iface + ' 2>/dev/null');
+	let m = match(out, /inet ([0-9.]+)/);
+	return m ? m[1] : '';
+}
+
+// 只探测，不写 CF
+function probe_ip() {
+	let out = sh(SCRIPT + ' --probe 2>/dev/null');
+	let ip = '', src = '', agree = 0;
+	let lines = split(out, '\n');
+	for (let i = 0; i < length(lines); i++) {
+		let l = lines[i];
+		let eq = index(l, '=');
+		if (eq <= 0)
+			continue;
+		let k = substr(l, 0, eq);
+		let v = substr(l, eq + 1);
+		if (k == 'IP')    ip = v;
+		if (k == 'SRC')   src = v;
+		if (k == 'AGREE') agree = int(v) || 0;
+	}
+	return { ip: ip, src: src, agree: agree };
+}
+
+// 读 Cloudflare 侧记录（走脚本 --status，避免 uc 里重复实现 API 调用）
+function get_cf_state() {
+	let out = sh(SCRIPT + ' --status 2>/dev/null');
+	let st = { ok: false, ip: '', rec_id: '' };
+	let lines = split(out, '\n');
+	for (let i = 0; i < length(lines); i++) {
+		let l = lines[i];
+		let eq = index(l, '=');
+		if (eq <= 0)
+			continue;
+		let k = substr(l, 0, eq);
+		let v = substr(l, eq + 1);
+		if (k == 'CF_OK')   st.ok = (v == 'true');
+		if (k == 'CF_IP')   st.ip = v;
+		if (k == 'REC_ID')  st.rec_id = v;
+	}
+	return st;
+}
+
+function get_last() {
+	let s = '';
+	try {
+		s = trim(readfile('/tmp/cfddns.last') || '');
+	} catch (e) {}
+	return s;
+}
+
+// ---------------------------------------------------------------------
+// cron 管理
+// ---------------------------------------------------------------------
+
+function get_minutes(l) {
+	if (index(l, '* * * * *') > -1)
+		return 1;
+	let p = index(l, '*/');
+	if (p < 0)
+		return 0;
+	let rest = substr(l, p + 2);
+	let num = '';
+	for (let i = 0; i < length(rest); i++) {
+		let ch = substr(rest, i, 1);
+		if (ch >= '0' && ch <= '9')
+			num += ch;
+		else
+			break;
+	}
+	return length(num) > 0 ? int(num) : 0;
+}
+
+function get_cron_state() {
+	let raw = sh('cat ' + CRONFILE + ' 2>/dev/null');
+	let lines = split(raw, '\n');
+	for (let i = 0; i < length(lines); i++) {
+		let l = lines[i];
+		if (length(l) > 0 && index(l, MARK) > -1) {
+			let enabled = !(index(l, '#') == 0);
+			return { enabled: enabled, minutes: get_minutes(l), line: l };
+		}
+	}
+	return { enabled: false, minutes: 0, line: '' };
+}
+
+function set_cron(enabled, minutes) {
+	if (minutes < 1)  minutes = 1;
+	if (minutes > 60) minutes = 60;
+
+	let sch = (minutes == 1) ? '*' : ('*/' + minutes);
+	let line = sch + ' * * * * ' + SCRIPT;
+	if (!enabled)
+		line = '#' + line;
+
+	// 先删旧行再追加，避免重复
+	system('sed -i \'/' + MARK + '/d\' ' + CRONFILE + ' 2>/dev/null');
+	system('echo \'' + line + '\' >> ' + CRONFILE);
+	system('/etc/init.d/cron reload >/dev/null 2>&1');
+	return get_cron_state();
+}
+
+// ---------------------------------------------------------------------
+// RPC 方法
+// ---------------------------------------------------------------------
+
+const methods = {
+	status: {
+		call: function(request) {
+			let cfg = load_conf();
+			let cf  = get_cf_state();
+			let p   = probe_ip();
+			let iface = cfg.WAN_IFACE || 'pppoe-wan';
+
+			let match = (p.ip && cf.ip && p.ip == cf.ip);
+
+			return {
+				domain:        cfg.DOMAIN || '',
+				record_type:   cfg.RECORD_TYPE || 'A',
+				iface:         iface,
+				iface_ip:      get_iface_ip(iface),   // 本地接口地址（可能是 NAT 内网）
+				wan_ip:        p.ip,                  // 真实公网出口
+				probe_src:     p.src,
+				probe_agree:   p.agree,
+				cf_ip:         cf.ip,
+				cf_ok:         cf.ok,
+				rec_id:        cf.rec_id,
+				match:         match,
+				script_exists: stat(SCRIPT) != null,
+				conf_exists:   stat(CONF) != null,
+				cron:          get_cron_state(),
+				last:          get_last()
+			};
+		}
+	},
+
+	// 只探测，不写 CF —— 给页面「测试探测」按钮用
+	probe: {
+		call: function(request) {
+			let cfg = load_conf();
+			let p = probe_ip();
+			return {
+				ip:    p.ip,
+				src:   p.src,
+				agree: p.agree,
+				iface: cfg.WAN_IFACE || 'pppoe-wan',
+				iface_ip: get_iface_ip(cfg.WAN_IFACE || 'pppoe-wan')
+			};
+		}
+	},
+
+	run_now: {
+		call: function(request) {
+			system('rm -f ' + RC_FILE + ' >/dev/null 2>&1');
+			system(SCRIPT + ' >/dev/null 2>&1; echo $? > ' + RC_FILE);
+			let code = 0;
+			try {
+				code = int(trim(readfile(RC_FILE) || '0'));
+			} catch (e) {}
+			return { code: code, last: get_last() };
+		}
+	},
+
+	set_interval: {
+		args: { enabled: false, minutes: 1 },
+		call: function(request) {
+			let enabled = request.args && request.args.enabled ? true : false;
+			let minutes = request.args && request.args.minutes ? int(request.args.minutes) : 1;
+			return set_cron(enabled, minutes);
+		}
+	},
+
+	// ---------------- 新增：配置读写 ----------------
+
+	// 读当前配置（token 脱敏）
+	get_config: {
+		call: function(request) {
+			let cfg = load_conf();
+			return {
+				has_token:   length(cfg.CF_TOKEN || '') > 0,
+				token_mask:  mask_token(cfg.CF_TOKEN || ''),
+				zone_id:     cfg.ZONE_ID || '',
+				domain:      cfg.DOMAIN || '',
+				record_type: cfg.RECORD_TYPE || 'A',
+				ttl:         int(cfg.TTL || 120),
+				proxied:     (cfg.PROXIED == 'true'),
+				iface:       cfg.WAN_IFACE || 'pppoe-wan',
+				sources:     cfg.IP_SOURCES || ''
+			};
+		}
+	},
+
+	// 只保存 Token
+	save_token: {
+		args: { token: '' },
+		call: function(request) {
+			let tk = trim((request.args && request.args.token) || '');
+			if (length(tk) == 0)
+				return { ok: false, err: 'Token 不能为空' };
+			if (length(tk) < 20)
+				return { ok: false, err: 'Token 长度异常（' + length(tk) + ' 字符），请检查是否完整复制' };
+
+			let ok = save_conf({ CF_TOKEN: tk });
+			return { ok: ok, err: ok ? '' : '写入 /etc/cfddns.conf 失败' };
+		}
+	},
+
+	// 保存其它配置项（不含 token）
+	save_config: {
+		args: { zone_id: '', domain: '', record_type: '', ttl: 0, proxied: false, iface: '', sources: '' },
+		call: function(request) {
+			let a = request.args || {};
+			let patch = {};
+
+			if (a.zone_id != null && length(trim(a.zone_id)) > 0)
+				patch.ZONE_ID = trim(a.zone_id);
+			if (a.domain != null && length(trim(a.domain)) > 0)
+				patch.DOMAIN = trim(a.domain);
+			if (a.record_type != null && length(trim(a.record_type)) > 0)
+				patch.RECORD_TYPE = trim(a.record_type);
+			if (a.ttl != null && int(a.ttl) > 0)
+				patch.TTL = sprintf('%d', int(a.ttl));
+			if (a.proxied != null)
+				patch.PROXIED = a.proxied ? 'true' : 'false';
+			if (a.iface != null && length(trim(a.iface)) > 0)
+				patch.WAN_IFACE = trim(a.iface);
+			if (a.sources != null && length(trim(a.sources)) > 0)
+				patch.IP_SOURCES = trim(a.sources);
+
+			if (length(patch) == 0)
+				return { ok: false, err: '没有需要保存的字段' };
+
+			let ok = save_conf(patch);
+			return { ok: ok, err: ok ? '' : '写入 /etc/cfddns.conf 失败' };
+		}
+	},
+
+	// ---------------- 新增：Cloudflare 域名与记录 ----------------
+
+	// 列出账号下所有域名（Zone）
+	list_zones: {
+		call: function(request) {
+			let r = cf_call('GET', '/zones?per_page=50&page=1', null);
+			if (!r.ok)
+				return { ok: false, err: r.err, err_code: r.err_code || 0 };
+
+			let out = [];
+			for (let i = 0; i < length(r.data); i++) {
+				let z = r.data[i];
+				push(out, {
+					id:     z.id || '',
+					name:   z.name || '',
+					status: z.status || ''
+				});
+			}
+			return { ok: true, zones: out };
+		}
+	},
+
+	// 列出指定域名下的解析记录
+	list_records: {
+		args: { zone_id: '' },
+		call: function(request) {
+			let zid = trim((request.args && request.args.zone_id) || '');
+			if (length(zid) == 0)
+				return { ok: false, err: '未指定域名（Zone）' };
+
+			let r = cf_call('GET', '/zones/' + zid + '/dns_records?per_page=100&page=1', null);
+			if (!r.ok)
+				return { ok: false, err: r.err, err_code: r.err_code || 0 };
+
+			let out = [];
+			for (let i = 0; i < length(r.data); i++) {
+				let d = r.data[i];
+				push(out, {
+					id:      d.id || '',
+					type:    d.type || '',
+					name:    d.name || '',
+					content: d.content || '',
+					ttl:     d.ttl || 0,
+					proxied: d.proxied ? true : false
+				});
+			}
+			return { ok: true, records: out };
+		}
+	},
+
+	// 手动添加解析
+	add_record: {
+		args: { zone_id: '', zone_name: '', type: 'A', name: '', content: '', ttl: 120, proxied: false, set_target: false },
+		call: function(request) {
+			let a = request.args || {};
+			let zid   = trim(a.zone_id || '');
+			let zname = trim(a.zone_name || '');
+			let type  = trim(a.type || 'A');
+			let name  = trim(a.name || '');
+			let content = trim(a.content || '');
+
+			if (length(zid) == 0)
+				return { ok: false, err: '请先选择域名（Zone）' };
+			if (length(name) == 0)
+				return { ok: false, err: '请填写主机名（可填 @ 表示根域名）' };
+			if (length(content) == 0)
+				return { ok: false, err: '请填写记录内容' };
+
+			// 内容格式校验
+			if (type == 'A') {
+				if (!match(content, /^([0-9]{1,3}\.){3}[0-9]{1,3}$/))
+					return { ok: false, err: 'A 记录内容必须是 IPv4 地址' };
+			}
+			else if (type == 'AAAA') {
+				if (!match(content, /^[0-9a-fA-F:]+$/))
+					return { ok: false, err: 'AAAA 记录内容必须是 IPv6 地址' };
+			}
+
+			let ttl = int(a.ttl) || 120;
+			if (ttl != 1 && (ttl < 60 || ttl > 86400))
+				ttl = 120;
+
+			let fq = to_fqdn(name, zname);
+			let body = sprintf(
+				'{"type":"%s","name":"%s","content":"%s","ttl":%d,"proxied":%s}',
+				type, fq, content, ttl, (a.proxied ? 'true' : 'false'));
+
+			let r = cf_call('POST', '/zones/' + zid + '/dns_records', body);
+			if (!r.ok)
+				return { ok: false, err: r.err, err_code: r.err_code || 0 };
+
+			// 顺手设为 DDNS 维护目标
+			let target_set = false;
+			if (a.set_target) {
+				target_set = save_conf({
+					ZONE_ID:     zid,
+					DOMAIN:      fq,
+					RECORD_TYPE: type,
+					TTL:         sprintf('%d', ttl),
+					PROXIED:     a.proxied ? 'true' : 'false'
+				});
+			}
+
+			return {
+				ok: true,
+				id: (r.data && r.data.id) ? r.data.id : '',
+				name: fq,
+				type: type,
+				target_set: target_set
+			};
+		}
+	},
+
+	// 删除记录
+	del_record: {
+		args: { zone_id: '', rec_id: '' },
+		call: function(request) {
+			let zid = trim((request.args && request.args.zone_id) || '');
+			let rid = trim((request.args && request.args.rec_id) || '');
+			if (length(zid) == 0 || length(rid) == 0)
+				return { ok: false, err: '参数不完整' };
+
+			let r = cf_call('DELETE', '/zones/' + zid + '/dns_records/' + rid, null);
+			if (!r.ok)
+				return { ok: false, err: r.err, err_code: r.err_code || 0 };
+
+			return { ok: true };
+		}
+	},
+
+	// 把某条记录设为 DDNS 维护目标
+	set_target: {
+		args: { zone_id: '', zone_name: '', domain: '', record_type: 'A' },
+		call: function(request) {
+			let a = request.args || {};
+			let zid    = trim(a.zone_id || '');
+			let domain = trim(a.domain || '');
+			let type   = trim(a.record_type || 'A');
+
+			if (length(zid) == 0 || length(domain) == 0)
+				return { ok: false, err: '参数不完整' };
+
+			let ok = save_conf({
+				ZONE_ID:     zid,
+				DOMAIN:      domain,
+				RECORD_TYPE: type
+			});
+			return { ok: ok, err: ok ? '' : '写入 /etc/cfddns.conf 失败' };
+		}
+	}
+};
+
+return { 'luci.cfddns': methods };

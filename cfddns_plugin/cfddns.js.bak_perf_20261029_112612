@@ -1,0 +1,865 @@
+'use strict';
+'require rpc';
+'require dom';
+'require ui';
+'require view';
+
+var callStatus = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'status',
+	expect: {}
+});
+
+var callProbe = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'probe',
+	expect: {}
+});
+
+var callRun = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'run_now',
+	expect: {}
+});
+
+var callSet = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'set_interval',
+	params: [ 'enabled', 'minutes' ],
+	expect: {}
+});
+
+var callGetConfig = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'get_config',
+	expect: {}
+});
+
+var callSaveToken = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'save_token',
+	params: [ 'token' ],
+	expect: {}
+});
+
+var callListZones = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'list_zones',
+	expect: {}
+});
+
+var callListRecords = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'list_records',
+	params: [ 'zone_id' ],
+	expect: {}
+});
+
+var callAddRecord = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'add_record',
+	params: [ 'zone_id', 'zone_name', 'type', 'name', 'content', 'ttl', 'proxied', 'set_target' ],
+	expect: {}
+});
+
+var callDelRecord = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'del_record',
+	params: [ 'zone_id', 'rec_id' ],
+	expect: {}
+});
+
+var callSetTarget = rpc.declare({
+	object: 'luci.cfddns',
+	method: 'set_target',
+	params: [ 'zone_id', 'zone_name', 'domain', 'record_type' ],
+	expect: {}
+});
+
+// ---------------------------------------------------------------------
+// 移动优先样式：所有宽度都用 flex/百分比，禁止固定 px 宽度
+// ---------------------------------------------------------------------
+
+var CSS = [
+	'.cfd-wrap { max-width: 100%; overflow-wrap: break-word; word-break: break-word; }',
+	'.cfd-wrap * { box-sizing: border-box; }',
+
+	// 卡片
+	'.cfd-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;',
+	'  padding: 14px 16px; margin-bottom: 14px; }',
+	'.cfd-card > h3 { margin: 0 0 12px 0; font-size: 15px; font-weight: 600; color: #1e293b;',
+	'  padding-bottom: 8px; border-bottom: 1px solid #f1f5f9; }',
+
+	// 键值行：窄屏自动上下堆叠
+	'.cfd-row { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 7px 0;',
+	'  border-bottom: 1px dashed #f1f5f9; font-size: 13px; }',
+	'.cfd-row:last-child { border-bottom: 0; }',
+	'.cfd-k { flex: 0 0 auto; min-width: 88px; color: #64748b; font-weight: 600; }',
+	'.cfd-v { flex: 1 1 160px; min-width: 0; color: #1e293b; overflow-wrap: break-word;',
+	'  word-break: break-all; }',
+	'.cfd-note { flex: 1 1 100%; font-size: 12px; color: #94a3b8; padding-left: 0; }',
+	'@media (min-width: 600px) { .cfd-note { flex: 0 0 auto; padding-left: 8px; } }',
+
+	// 代码
+	'.cfd-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;',
+	'  background: #f8fafc; padding: 1px 5px; border-radius: 3px; color: #0f172a;',
+	'  overflow-wrap: break-word; word-break: break-all; }',
+
+	// 表单行
+	'.cfd-field { margin-bottom: 14px; }',
+	'.cfd-field > label { display: block; font-size: 13px; font-weight: 600;',
+	'  color: #334155; margin-bottom: 6px; }',
+	'.cfd-hint { font-size: 12px; color: #94a3b8; line-height: 1.7; margin-top: 6px; }',
+
+	// 输入框：全部 100% 宽，窄屏优先
+	'.cfd-wrap input[type=text], .cfd-wrap input[type=password],',
+	'.cfd-wrap input[type=number], .cfd-wrap select {',
+	'  width: 100% !important; max-width: 100% !important; min-width: 0 !important;',
+	'  height: 38px; padding: 0 10px; font-size: 14px; border: 1px solid #cbd5e1;',
+	'  border-radius: 6px; background: #fff; }',
+	'.cfd-wrap input:focus, .cfd-wrap select:focus {',
+	'  outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.12); }',
+	'.cfd-mono { font-family: ui-monospace, Menlo, Consolas, monospace !important; }',
+
+	// 内联组合：类型 + 主机名 + .域名
+	'.cfd-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }',
+	'.cfd-inline > .cfd-grow { flex: 1 1 140px; min-width: 0; }',
+	'.cfd-inline > .cfd-fix { flex: 0 1 auto; min-width: 0; }',
+	// 窄元素（类型下拉、TTL）在 flex 里按内容宽度，不拉满
+	'.cfd-wrap .cfd-fix > input, .cfd-wrap .cfd-fix > select {',
+	'  width: auto !important; min-width: 82px !important; max-width: 100% !important; }',
+	'.cfd-wrap .cfd-narrow { max-width: 130px !important; }',
+	'.cfd-suffix { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;',
+	'  color: #475569; overflow-wrap: break-word; word-break: break-all; }',
+	'@media (max-width: 480px) { .cfd-suffix { flex: 1 1 100%; padding: 2px 0 0 2px; } }',
+
+	// 按钮
+	'.cfd-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }',
+	'.cfd-btns .btn, .cfd-btns button { flex: 1 1 auto; min-width: 104px;',
+	'  margin: 0 !important; white-space: nowrap; }',
+	'@media (min-width: 600px) { .cfd-btns .btn, .cfd-btns button { flex: 0 0 auto; } }',
+
+	// 记录卡片（替代表格）
+	'.cfd-rec { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;',
+	'  margin-bottom: 10px; background: #fff; }',
+	'.cfd-rec.cur { border-color: #10b981; background: #f0fdf4; }',
+	'.cfd-rec-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;',
+	'  margin-bottom: 8px; }',
+	'.cfd-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px;',
+	'  border-radius: 4px; background: #e2e8f0; color: #334155; }',
+	'.cfd-badge.a { background: #dbeafe; color: #1d4ed8; }',
+	'.cfd-badge.aaaa { background: #ede9fe; color: #6d28d9; }',
+	'.cfd-badge.cname { background: #fef3c7; color: #b45309; }',
+	'.cfd-badge.txt { background: #f1f5f9; color: #475569; }',
+	'.cfd-badge.mx { background: #ffe4e6; color: #be123c; }',
+	'.cfd-badge.on { background: #d1fae5; color: #047857; }',
+	'.cfd-rec-name { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;',
+	'  font-weight: 600; color: #0f172a; overflow-wrap: break-word; word-break: break-all;',
+	'  flex: 1 1 100%; }',
+	'.cfd-rec-val { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;',
+	'  color: #475569; background: #f8fafc; padding: 6px 8px; border-radius: 4px;',
+	'  overflow-wrap: break-word; word-break: break-all; margin-bottom: 8px; }',
+	'.cfd-rec-meta { font-size: 11px; color: #94a3b8; margin-bottom: 8px; }',
+	'.cfd-rec-acts { display: flex; flex-wrap: wrap; gap: 8px; }',
+	'.cfd-rec-acts .btn, .cfd-rec-acts button { flex: 1 1 auto; min-width: 96px;',
+	'  font-size: 12px !important; padding: 5px 10px !important; margin: 0 !important; }',
+
+	// 提示条
+	'.cfd-alert { border-radius: 6px; padding: 10px 12px; font-size: 12px;',
+	'  line-height: 1.8; margin-bottom: 12px; overflow-wrap: break-word; }',
+	'.cfd-alert.warn { background: #fffbeb; border-left: 3px solid #f59e0b; color: #78350f; }',
+	'.cfd-alert.info { background: #eff6ff; border-left: 3px solid #3b82f6; color: #1e40af; }',
+	'.cfd-alert.err  { background: #fef2f2; border-left: 3px solid #ef4444; color: #991b1b; }',
+	'.cfd-alert b { font-weight: 700; }',
+
+	// 状态点
+	'.cfd-ok { color: #059669; font-weight: 700; }',
+	'.cfd-bad { color: #dc2626; font-weight: 700; }',
+	'.cfd-warn { color: #d97706; font-weight: 700; }',
+	'.cfd-mute { color: #94a3b8; }'
+].join('\n');
+
+// ---------------------------------------------------------------------
+// 工具
+// ---------------------------------------------------------------------
+
+function okBtn(text, cls, handler) {
+	var btn = E('button', {
+		'class': 'btn cbi-button cbi-button-' + cls
+	}, text);
+	btn.addEventListener('click', function(ev) {
+		ev.preventDefault();
+		btn.disabled = true;
+		handler(btn);
+	});
+	return btn;
+}
+
+function notify(msg, level) {
+	ui.addNotification(null, E('p', {}, msg), level || 'info');
+}
+
+function errText(r) {
+	if (!r)
+		return '未知错误';
+	var s = r.err || '操作失败';
+	if (r.err_code)
+		s += '（错误码 ' + r.err_code + '）';
+	return s;
+}
+
+function code(v) {
+	return E('span', { 'class': 'cfd-code' }, (v && String(v).length) ? String(v) : '-');
+}
+
+// 键值行
+function kvRow(k, vNode, note) {
+	var nodes = [
+		E('div', { 'class': 'cfd-k' }, k),
+		E('div', { 'class': 'cfd-v' }, vNode)
+	];
+	if (note)
+		nodes.push(E('div', { 'class': 'cfd-note' }, note));
+	return E('div', { 'class': 'cfd-row' }, nodes);
+}
+
+function card(title, children) {
+	return E('div', { 'class': 'cfd-card' }, [
+		E('h3', {}, title)
+	].concat(children || []));
+}
+
+function field(labelText, inputNode, hintNodes) {
+	var nodes = [
+		E('label', {}, labelText),
+		inputNode
+	];
+	if (hintNodes)
+		nodes.push(E('div', { 'class': 'cfd-hint' }, hintNodes));
+	return E('div', { 'class': 'cfd-field' }, nodes);
+}
+
+function typeBadge(type) {
+	var t = String(type || '').toLowerCase();
+	var cls = 'cfd-badge';
+	if (t === 'a' || t === 'aaaa' || t === 'cname' || t === 'txt' || t === 'mx')
+		cls += ' ' + t;
+	return E('span', { 'class': cls }, type || '?');
+}
+
+// ---------------------------------------------------------------------
+// 页面
+// ---------------------------------------------------------------------
+
+return view.extend({
+	load: function() {
+		return Promise.all([
+			callStatus(),
+			callGetConfig()
+		]);
+	},
+
+	render: function(data) {
+		var st = (data && data[0]) || {};
+		var cfg = (data && data[1]) || {};
+		var cron = st.cron || {};
+
+		// 页面级状态
+		var S = {
+			zones: [],
+			records: [],
+			selZone: null,
+			zonesLoaded: false
+		};
+
+		// =============================================================
+		// 一、运行状态
+		// =============================================================
+
+		var matchNode;
+		if (!st.wan_ip)
+			matchNode = E('span', { 'class': 'cfd-bad' }, '✗ 探测失败');
+		else if (!st.cf_ok)
+			matchNode = E('span', { 'class': 'cfd-warn' }, '⚠ CF 查询失败');
+		else if (st.match)
+			matchNode = E('span', { 'class': 'cfd-ok' }, '✓ 已同步');
+		else
+			matchNode = E('span', { 'class': 'cfd-warn' }, '⚠ 未同步');
+
+		var cronText = cron.enabled
+			? E('span', { 'class': 'cfd-ok' }, '已启用 · 每 ' + (cron.minutes || 1) + ' 分钟')
+			: E('span', { 'class': 'cfd-mute' }, '已停用');
+
+		var srcNote = '';
+		if (st.probe_src) {
+			srcNote = '来源 ' + st.probe_src;
+			if (st.probe_agree >= 2)
+				srcNote += ' · ' + st.probe_agree + ' 源一致';
+			else if (st.probe_agree == 1)
+				srcNote += ' · 仅 1 源';
+		}
+
+		var statusCard = card('运行状态', [
+			kvRow('维护域名', code(st.domain), '类型 ' + (st.record_type || 'A')),
+			kvRow('公网出口', code(st.wan_ip), srcNote),
+			kvRow('CF 记录', code(st.cf_ip), st.rec_id ? ('ID ' + String(st.rec_id).substring(0, 8) + '…') : ''),
+			kvRow('同步状态', matchNode),
+			kvRow('WAN 接口', code(st.iface), '地址 ' + (st.iface_ip || '-')),
+			kvRow('定时任务', cronText),
+			kvRow('上次执行', code(st.last))
+		]);
+
+		// NAT 提示
+		var natAlert = null;
+		if (st.iface_ip && st.wan_ip && st.iface_ip !== st.wan_ip) {
+			natAlert = E('div', { 'class': 'cfd-alert warn' }, [
+				E('b', {}, '运营商 NAT'),
+				E('div', { 'style': 'margin-top:4px;' },
+					'接口地址 ' + st.iface_ip + ' 是内网地址，真实出口是 ' + st.wan_ip +
+					'。DNS 写的是后者。')
+			]);
+		}
+
+		// =============================================================
+		// 二、API 凭据
+		// =============================================================
+
+		var tokenInput = E('input', {
+			'type': 'password',
+			'class': 'cfd-mono',
+			'placeholder': cfg.has_token ? '留空不修改，填新值则覆盖' : '粘贴 Cloudflare API Token',
+			'autocomplete': 'new-password',
+			'spellcheck': 'false'
+		});
+
+		var tokenState = cfg.has_token
+			? E('span', { 'class': 'cfd-ok' }, '✓ ' + (cfg.token_mask || '已配置'))
+			: E('span', { 'class': 'cfd-bad' }, '✗ 未配置');
+
+		var saveTokenBtn = okBtn('保存 Token', 'apply', function(btn) {
+			var v = (tokenInput.value || '').trim();
+			if (!v.length) {
+				notify('请先粘贴 Token', 'warning');
+				btn.disabled = false;
+				return;
+			}
+			callSaveToken(v).then(function(r) {
+				if (r && r.ok) {
+					notify('Token 已保存', 'info');
+					setTimeout(function() { location.reload(); }, 600);
+				} else {
+					notify('保存失败：' + errText(r), 'danger');
+					btn.disabled = false;
+				}
+			}).catch(function(e) {
+				notify('保存出错：' + (e.message || e), 'danger');
+				btn.disabled = false;
+			});
+		});
+
+		var zonesBtn = okBtn('验证并列出域名', 'action', function(btn) {
+			callListZones().then(function(r) {
+				btn.disabled = false;
+				if (!r || !r.ok) {
+					notify('获取域名失败：' + errText(r), 'danger');
+					return;
+				}
+				S.zones = r.zones || [];
+				S.zonesLoaded = true;
+				notify(S.zones.length
+					? 'Token 有效，共 ' + S.zones.length + ' 个域名'
+					: 'Token 有效，但账号下没有域名', S.zones.length ? 'info' : 'warning');
+				renderZones();
+			}).catch(function(e) {
+				btn.disabled = false;
+				notify('请求出错：' + (e.message || e), 'danger');
+			});
+		});
+
+		var tokenCard = card('API 凭据', [
+			kvRow('当前状态', tokenState),
+			field('API Token', tokenInput, [
+				E('div', {}, '需要权限：Zone → DNS → Edit、Zone → Zone → Read'),
+				E('div', {}, 'Token 存在 /etc/cfddns.conf（600），页面只显示脱敏值')
+			]),
+			E('div', { 'class': 'cfd-btns' }, [ saveTokenBtn, zonesBtn ])
+		]);
+
+		// =============================================================
+		// 三、域名与解析
+		// =============================================================
+
+		var zonesBox = E('div', {});
+		var zonesCard = card('域名与解析', [ zonesBox ]);
+
+		function renderZones() {
+			dom.content(zonesBox, buildZones());
+		}
+
+		function buildZones() {
+			if (!S.zonesLoaded) {
+				return E('div', { 'class': 'cfd-alert info' },
+					'点上方「验证并列出域名」加载域名列表。');
+			}
+
+			if (!S.zones.length) {
+				return E('div', { 'class': 'cfd-alert err' },
+					'该 Token 下没有可用域名，请检查权限是否含 Zone → Zone → Read。');
+			}
+
+			var sel = E('select', {});
+			sel.appendChild(E('option', { 'value': '' }, '— 请选择域名 —'));
+			for (var i = 0; i < S.zones.length; i++) {
+				var z = S.zones[i];
+				var o = E('option', { 'value': z.id },
+					z.name + (z.status && z.status !== 'active' ? '（' + z.status + '）' : ''));
+				if (S.selZone && S.selZone.id === z.id)
+					o.selected = true;
+				sel.appendChild(o);
+			}
+
+			sel.addEventListener('change', function() {
+				S.selZone = null;
+				S.records = [];
+				for (var k = 0; k < S.zones.length; k++) {
+					if (S.zones[k].id === sel.value) {
+						S.selZone = S.zones[k];
+						break;
+					}
+				}
+				renderZones();
+			});
+
+			var loadBtn = okBtn('加载解析记录', 'neutral', function(btn) {
+				if (!sel.value) {
+					notify('请先选择域名', 'warning');
+					btn.disabled = false;
+					return;
+				}
+				for (var k = 0; k < S.zones.length; k++) {
+					if (S.zones[k].id === sel.value) {
+						S.selZone = S.zones[k];
+						break;
+					}
+				}
+				callListRecords(sel.value).then(function(r) {
+					btn.disabled = false;
+					if (!r || !r.ok) {
+						notify('加载失败：' + errText(r), 'danger');
+						return;
+					}
+					S.records = r.records || [];
+					notify('已加载 ' + S.records.length + ' 条', 'info');
+					renderZones();
+				}).catch(function(e) {
+					btn.disabled = false;
+					notify('出错：' + (e.message || e), 'danger');
+				});
+			});
+
+			var nodes = [
+				field('选择域名', sel),
+				E('div', { 'class': 'cfd-btns', 'style': 'margin-bottom:14px;' }, [ loadBtn ])
+			];
+
+			if (S.selZone)
+				nodes.push(buildRecords());
+
+			nodes.push(buildAddForm());
+
+			return E('div', {}, nodes);
+		}
+
+		function buildRecords() {
+			if (!S.records.length) {
+				return E('div', { 'class': 'cfd-alert info', 'style': 'margin-bottom:14px;' },
+					'暂无记录（或尚未加载）。用下面的表单添加第一条。');
+			}
+
+			var wrap = E('div', { 'style': 'margin-bottom:14px;' }, [
+				E('div', {
+					'style': 'font-size:13px;font-weight:600;color:#334155;margin-bottom:8px;'
+				}, '解析记录（' + S.records.length + '）')
+			]);
+
+			for (var i = 0; i < S.records.length; i++) {
+				wrap.appendChild(buildRecordItem(S.records[i]));
+			}
+
+			return wrap;
+		}
+
+		function buildRecordItem(rec) {
+			var isTarget = (rec.name === st.domain && rec.type === (st.record_type || 'A'));
+
+			var head = E('div', { 'class': 'cfd-rec-head' }, [
+				typeBadge(rec.type),
+				isTarget ? E('span', { 'class': 'cfd-badge on' }, '✓ 当前维护') : null,
+				rec.proxied ? E('span', { 'class': 'cfd-badge' }, '橙云') : null,
+				E('span', { 'class': 'cfd-mute', 'style': 'font-size:11px;' },
+					rec.ttl == 1 ? 'TTL 自动' : 'TTL ' + rec.ttl)
+			].filter(function(n) { return n != null; }));
+
+			var setBtn = E('button', {
+				'class': 'btn cbi-button cbi-button-neutral'
+			}, isTarget ? '已是目标' : '设为维护目标');
+			if (isTarget)
+				setBtn.disabled = true;
+			setBtn.addEventListener('click', function(ev) {
+				ev.preventDefault();
+				setBtn.disabled = true;
+				callSetTarget(S.selZone.id, S.selZone.name, rec.name, rec.type).then(function(r) {
+					if (r && r.ok) {
+						notify('已把 ' + rec.name + ' 设为维护目标', 'info');
+						setTimeout(function() { location.reload(); }, 700);
+					} else {
+						notify('失败：' + errText(r), 'danger');
+						setBtn.disabled = false;
+					}
+				}).catch(function(e) {
+					notify('出错：' + (e.message || e), 'danger');
+					setBtn.disabled = false;
+				});
+			});
+
+			var delBtn = E('button', {
+				'class': 'btn cbi-button cbi-button-reset'
+			}, '删除');
+			delBtn.addEventListener('click', function(ev) {
+				ev.preventDefault();
+				if (!confirm('确定删除这条记录？\n\n' + rec.type + '  ' + rec.name + '\n\n内容：' + rec.content))
+					return;
+				delBtn.disabled = true;
+				callDelRecord(S.selZone.id, rec.id).then(function(r) {
+					if (r && r.ok) {
+						notify('已删除 ' + rec.name, 'info');
+						S.records = S.records.filter(function(x) { return x.id !== rec.id; });
+						renderZones();
+					} else {
+						notify('删除失败：' + errText(r), 'danger');
+						delBtn.disabled = false;
+					}
+				}).catch(function(e) {
+					notify('出错：' + (e.message || e), 'danger');
+					delBtn.disabled = false;
+				});
+			});
+
+			return E('div', { 'class': 'cfd-rec' + (isTarget ? ' cur' : '') }, [
+				head,
+				E('div', { 'class': 'cfd-rec-name' }, rec.name),
+				E('div', { 'class': 'cfd-rec-val' }, rec.content),
+				E('div', { 'class': 'cfd-rec-acts' }, [ setBtn, delBtn ])
+			]);
+		}
+
+		function buildAddForm() {
+			var typeSel = E('select', { 'class': 'cfd-narrow' });
+			var types = [ 'A', 'AAAA', 'CNAME', 'TXT' ];
+			for (var i = 0; i < types.length; i++) {
+				var o = E('option', { 'value': types[i] }, types[i]);
+				if (types[i] === 'A')
+					o.selected = true;
+				typeSel.appendChild(o);
+			}
+
+			var nameInput = E('input', {
+				'type': 'text',
+				'class': 'cfd-mono',
+				'placeholder': 'home 或 @',
+				'spellcheck': 'false'
+			});
+
+			var contentInput = E('input', {
+				'type': 'text',
+				'class': 'cfd-mono',
+				'placeholder': 'IP 或目标域名',
+				'spellcheck': 'false'
+			});
+
+			var ttlInput = E('input', {
+			'type': 'number',
+			'value': '120',
+			'min': '60',
+			'max': '86400',
+			'class': 'cfd-narrow'
+		});
+
+			var proxiedChk = E('input', { 'type': 'checkbox' });
+			var setTargetChk = E('input', { 'type': 'checkbox' });
+			setTargetChk.checked = true;
+
+			var fillIpBtn = E('button', {
+				'class': 'btn cbi-button cbi-button-neutral'
+			}, '填入当前公网 IP');
+			fillIpBtn.addEventListener('click', function(ev) {
+				ev.preventDefault();
+				fillIpBtn.disabled = true;
+				callProbe().then(function(r) {
+					fillIpBtn.disabled = false;
+					if (r && r.ip) {
+						contentInput.value = r.ip;
+						typeSel.value = 'A';
+						notify('已填入 ' + r.ip, 'info');
+					} else {
+						notify('探测失败', 'danger');
+					}
+				}).catch(function(e) {
+					fillIpBtn.disabled = false;
+					notify('出错：' + (e.message || e), 'danger');
+				});
+			});
+
+			var addBtn = okBtn('添加解析', 'action', function(btn) {
+				if (!S.selZone) {
+					notify('请先选择域名', 'warning');
+					btn.disabled = false;
+					return;
+				}
+				var nm = (nameInput.value || '').trim();
+				var ct = (contentInput.value || '').trim();
+				if (!nm.length) {
+					notify('请填写主机名（根域名填 @）', 'warning');
+					btn.disabled = false;
+					return;
+				}
+				if (!ct.length) {
+					notify('请填写记录内容', 'warning');
+					btn.disabled = false;
+					return;
+				}
+
+				callAddRecord(
+					S.selZone.id, S.selZone.name, typeSel.value,
+					nm, ct, parseInt(ttlInput.value, 10) || 120,
+					proxiedChk.checked, setTargetChk.checked
+				).then(function(r) {
+					if (r && r.ok) {
+						var msg = '已添加 ' + r.type + '：' + r.name;
+						if (r.target_set)
+							msg += '（已接管维护）';
+						notify(msg, 'info');
+						if (r.target_set) {
+							setTimeout(function() { location.reload(); }, 900);
+							return;
+						}
+						callListRecords(S.selZone.id).then(function(rr) {
+							if (rr && rr.ok) {
+								S.records = rr.records || [];
+								renderZones();
+							} else {
+								btn.disabled = false;
+							}
+						});
+					} else {
+						notify('添加失败：' + errText(r), 'danger');
+						btn.disabled = false;
+					}
+				}).catch(function(e) {
+					notify('出错：' + (e.message || e), 'danger');
+					btn.disabled = false;
+				});
+			});
+
+			var zoneLabel = S.selZone ? S.selZone.name : '（先选域名）';
+
+			return E('div', { 'style': 'border-top:1px solid #e2e8f0;padding-top:14px;' }, [
+				E('div', {
+					'style': 'font-size:13px;font-weight:600;color:#334155;margin-bottom:10px;'
+				}, '手动添加解析'),
+
+				// 类型 + 主机名 + .域名
+				E('div', { 'class': 'cfd-field' }, [
+					E('label', {}, '类型 / 主机名'),
+					E('div', { 'class': 'cfd-inline' }, [
+						E('div', { 'class': 'cfd-fix' }, typeSel),
+						E('div', { 'class': 'cfd-grow' }, nameInput),
+						E('div', { 'class': 'cfd-suffix' }, '. ' + zoneLabel)
+					])
+				]),
+
+				// 内容
+				E('div', { 'class': 'cfd-field' }, [
+					E('label', {}, '记录内容'),
+					E('div', { 'class': 'cfd-inline' }, [
+						E('div', { 'class': 'cfd-grow' }, contentInput),
+						E('div', { 'class': 'cfd-fix' }, fillIpBtn)
+					])
+				]),
+
+				// TTL + 开关
+				E('div', { 'class': 'cfd-field' }, [
+					E('label', {}, 'TTL'),
+					ttlInput,
+					E('div', {
+						'style': 'display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:13px;'
+					}, [
+						E('label', {
+							'style': 'display:inline-flex;align-items:center;gap:6px;font-weight:400;'
+						}, [ proxiedChk, E('span', {}, '橙云代理') ]),
+						E('label', {
+							'style': 'display:inline-flex;align-items:center;gap:6px;font-weight:400;'
+						}, [ setTargetChk, E('span', {}, '同时接管维护') ])
+					])
+				]),
+
+				E('div', { 'class': 'cfd-btns' }, [ addBtn ]),
+
+				E('div', { 'class': 'cfd-hint' }, [
+					E('div', {}, '主机名填 @ 表示根域名，填 home 会补成 home.' + zoneLabel),
+					E('div', {}, '勾选「同时接管维护」后，定时任务改为维护这条记录')
+				])
+			]);
+		}
+
+		// 已有 token 时自动加载域名
+		if (cfg.has_token) {
+			callListZones().then(function(r) {
+				if (r && r.ok) {
+					S.zones = r.zones || [];
+					S.zonesLoaded = true;
+					if (S.zones.length) {
+						for (var i = 0; i < S.zones.length; i++) {
+							if (st.domain && st.domain.indexOf(S.zones[i].name) >= 0) {
+								S.selZone = S.zones[i];
+								break;
+							}
+						}
+						if (S.selZone) {
+							callListRecords(S.selZone.id).then(function(rr) {
+								if (rr && rr.ok)
+									S.records = rr.records || [];
+								renderZones();
+							});
+						} else {
+							renderZones();
+						}
+					} else {
+						renderZones();
+					}
+				}
+			}).catch(function() {});
+		}
+
+		// =============================================================
+		// 四、操作与设置
+		// =============================================================
+
+		var runBtn = okBtn('立即更新解析', 'action', function(btn) {
+			callRun().then(function(res) {
+				var msg = '执行完成（' + res.code + '）';
+				if (res.code === 0)      msg = '同步成功';
+				else if (res.code === 1) msg = '探测公网 IP 失败';
+				else if (res.code === 2) msg = 'CF 查询失败';
+				else if (res.code === 3) msg = 'CF 写入失败';
+				else if (res.code === 4) msg = '配置文件缺失';
+				else if (res.code === 5) msg = '已有任务运行中，跳过';
+				notify(msg, res.code === 0 ? 'info' : 'warning');
+				setTimeout(function() { location.reload(); }, 800);
+			}).catch(function(e) {
+				notify('执行失败：' + (e.message || e), 'danger');
+				btn.disabled = false;
+			});
+		});
+
+		var probeBtn = okBtn('测试探测', 'neutral', function(btn) {
+			callProbe().then(function(res) {
+				if (res && res.ip) {
+					var txt = '公网 IP：' + res.ip;
+					if (res.agree >= 2)
+						txt += '（' + res.agree + ' 源一致）';
+					notify(txt, 'info');
+				} else {
+					notify('探测失败：所有源无响应', 'danger');
+				}
+				btn.disabled = false;
+			}).catch(function(e) {
+				notify('探测出错：' + (e.message || e), 'danger');
+				btn.disabled = false;
+			});
+		});
+
+		var toggleBtn = okBtn(cron.enabled ? '停用定时' : '启用定时',
+			cron.enabled ? 'reset' : 'apply', function(btn) {
+			callSet(!cron.enabled, cron.minutes || 1).then(function() {
+				notify(cron.enabled ? '已停用' : '已启用', 'info');
+				setTimeout(function() { location.reload(); }, 500);
+			}).catch(function(e) {
+				notify('失败：' + (e.message || e), 'danger');
+				btn.disabled = false;
+			});
+		});
+
+		var refreshBtn = okBtn('刷新', 'neutral', function() {
+			location.reload();
+		});
+
+		var intervalInput = E('input', {
+			'type': 'number',
+			'min': '1',
+			'max': '60',
+			'value': cron.minutes || 1,
+			'class': 'cfd-narrow'
+		});
+
+		var applyBtn = okBtn('保存周期', 'apply', function(btn) {
+			var mins = parseInt(intervalInput.value, 10) || 1;
+			if (mins < 1) mins = 1;
+			if (mins > 60) mins = 60;
+			callSet(cron.enabled, mins).then(function() {
+				notify('周期已更新为 ' + mins + ' 分钟', 'info');
+				setTimeout(function() { location.reload(); }, 500);
+			}).catch(function(e) {
+				notify('保存失败：' + (e.message || e), 'danger');
+				btn.disabled = false;
+			});
+		});
+
+		var controlCard = card('操作与设置', [
+			E('div', { 'class': 'cfd-field' }, [
+				E('label', {}, '快捷操作'),
+				E('div', { 'class': 'cfd-btns' }, [ runBtn, probeBtn, toggleBtn, refreshBtn ])
+			]),
+			E('div', { 'class': 'cfd-field', 'style': 'margin-bottom:0;' }, [
+				E('label', {}, '定时同步周期（分钟，1-60）'),
+				intervalInput,
+				E('div', { 'class': 'cfd-btns', 'style': 'margin-top:10px;' }, [ applyBtn ]),
+				E('div', { 'class': 'cfd-hint' },
+					'启用后按间隔自动探测公网出口并同步到当前维护的记录')
+			])
+		]);
+
+		// =============================================================
+		// 五、说明
+		// =============================================================
+
+		var helpCard = card('说明', [
+			E('div', { 'class': 'cfd-hint', 'style': 'margin-top:0;' }, [
+				E('div', {}, '维护的是一条指定解析记录，内容为路由器真实公网出口 IPv4。'),
+				E('div', {}, 'PPPoE 拿到的是运营商 NAT 内网地址，本地查不到真实出口，故用外部服务多源探测并交叉验证。'),
+				E('div', {}, '配置：/etc/cfddns.conf（改完即时生效，无需重启）'),
+				E('div', {}, '日志：/tmp/cfddns.log（重启清空）')
+			])
+		]);
+
+		// =============================================================
+		// 组装
+		// =============================================================
+
+		var styleNode = E('style', {}, CSS);
+
+		return E('div', { 'class': 'cbi-map cfd-wrap' }, [
+			styleNode,
+			E('h2', { 'name': 'content', 'style': 'font-size:18px;margin-bottom:4px;' },
+				'Cloudflare 动态域名'),
+			E('div', { 'style': 'font-size:12px;color:#94a3b8;margin-bottom:14px;' },
+				'自动同步公网出口 IPv4 到 Cloudflare DNS'),
+			natAlert,
+			statusCard,
+			tokenCard,
+			zonesCard,
+			controlCard,
+			helpCard
+		].filter(function(n) { return n != null; }));
+	}
+});

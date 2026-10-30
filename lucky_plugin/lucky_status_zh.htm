@@ -1,0 +1,355 @@
+<style>
+	.mar-10 {
+		margin-left: 50px;
+		margin-right: 10px;
+	}
+
+	#_luckyAdminLink,#_luckyAdminOpen{
+		font-weight: bold;
+	}
+</style>
+
+<fieldset class="cbi-section">
+	<p id="_luckyAdminLink"></p>
+</fieldset>
+
+
+<style>
+	.cbi-section {
+	  border: 1px solid #ccc;
+	  padding: 10px;
+	}
+	.cbi-section td:first-child {
+	  font-weight: bold;
+	}
+  </style>
+
+<fieldset class="cbi-section">
+	<legend>主程序信息</legend>
+	<table>
+	  <tr>
+		<td>安装状态</td>
+		<td id="_luckyInstallStatus">正在获取数据...</td>
+	  </tr>
+	  <tr>
+		<td>运行状态</td>
+		<td id="_luckyStatus">正在获取数据...</td>
+	  </tr>
+	  <tr>
+		<td>程序架构</td>
+		<td id="_luckyArch">正在获取数据...</td>
+	  </tr>
+	  <tr>
+		<td>编译时间</td>
+		<td id="_luckyCompilationTime">正在获取数据...</td>
+	  </tr>
+	  <tr>
+		<td>程序版本</td>
+		<td id="_luckyVersion">正在获取数据...</td>
+	  </tr>
+	</table>
+  </fieldset>
+  
+  <fieldset class="cbi-section">
+	<legend>管理面板信息</legend>
+	<table>
+	  <tr>
+		<td>管理面板地址</td>
+		<td id="_luckyAdminOpen">正在获取数据...</td>
+	  </tr>
+	  <tr>
+		<td>面板登录信息</td>
+		<td id="_luckyLoginInfo">正在获取数据...</td>
+	  </tr>
+	</table>
+  </fieldset>
+
+
+
+
+<script type="text/javascript">
+	var daip = document.getElementById('_daip');
+	var luckyInstallStatus = document.getElementById('_luckyInstallStatus')
+	//var luckyAdminPanelURL = document.getElementById('_luckyAdminPanelURL')
+	var luckyArch = document.getElementById('_luckyArch')
+	var luckyStatus = document.getElementById('_luckyStatus')
+	var luckyCompilationTime = document.getElementById('_luckyCompilationTime')
+	var luckyVersion = document.getElementById('_luckyVersion')
+	var luckyLoginInfo = document.getElementById('_luckyLoginInfo')
+	var luckyAdminOpen = document.getElementById('_luckyAdminOpen')
+	var luckyHttpPort = document.getElementById('_luckyHttpPort')
+	var luckyAllowInternetaccess = document.getElementById('_luckyAllowInternetaccess')
+	var luckySafeURL = document.getElementById('_luckySafeURL')
+	var luckyAdminLink = document.getElementById('_luckyAdminLink')
+
+	var luckyInstalled = false
+	var adminHttpURL = ""
+
+
+	FlushLuckyInfo()
+
+	MotitorLuckyState()
+
+
+	function flushLuckyStatus(status) {
+		if (status) {
+			luckyStatus.innerHTML = '<b style=color:green>服务运行中</b>'
+			luckyStatus.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+			luckyStatus.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="停止" onclick="return StopService()"/>'
+
+
+			//luckyAdminOpen.innerHTML = '<input type="button" class="btn cbi-button cbi-button-reload" value="打开管理面板" onclick="return OpenAdminURL(this,adminHttpURL)"/>' 
+			luckyAdminOpen.innerHTML = '<a href="' + adminHttpURL + '"' + ' target="_blank">' + adminHttpURL + '</a> '
+
+			luckyAdminLink.innerHTML = '<b><a href="' + adminHttpURL + '"' + ' target="_blank">' + adminHttpURL + '</a></b> '
+
+		} else {
+
+
+			if (luckyInstalled) {
+				luckyStatus.innerHTML = '<b style=color:red>服务未运行</b>'
+				luckyStatus.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+				luckyStatus.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="启动" onclick="return StartService()"/>'
+			} else {
+				luckyStatus.innerHTML = '<b style=color:red>未安装</b>'
+			}
+
+
+			luckyAdminOpen.innerHTML = ''
+			luckyAdminLink.innerHTML = ''
+		}
+	}
+
+	function FlushLuckyInfo() {
+		XHR.get('<%=url([[admin]], [[services]], [[lucky_info]])%>', null,
+			function (x, info) {
+
+				if (info) {
+					luckyArch.innerHTML = '<b style=color:blue>' + info.luckyArch + '</b>'
+					if (info.luckyInfo == "") {
+
+						luckyInstalled = false
+						//console.log("没有安装")
+						luckyStatus.innerHTML = '<b style=color:red>未安装</b>'
+						luckyInstallStatus.innerHTML = '<b style=color:red>未安装</b>'
+						luckyHttpPort.innerHTML = '<b style=color:red>未安装</b>'
+						luckyCompilationTime.innerHTML = '<b style=color:red>未安装</b>'
+
+						luckyLoginInfo.innerHTML = '<b style=color:red>未安装</b>'
+						luckyAdminOpen.innerHTML = '<b style=color:red>未安装</b>'
+						luckyAllowInternetaccess.innerHTML = '<b style=color:red>未安装</b>'
+						luckySafeURL.innerHTML = '<b style=color:red>未安装</b>'
+
+						luckyVersion.innerHTML = '<b style=color:red>未安装</b>'
+						luckyVersion.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+						luckyVersion.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="获取最新版本" onclick="return OpenGithub()"/>'
+						luckyAdminLink.innerHTML = ''
+						return
+					}
+
+					luckyInstalled = true
+
+
+
+
+					luckyInstallStatus.innerHTML = '<b style=color:green>已安装</b>'
+					console.log("已经安装")
+
+					var luckyInfo = JSON.parse(info.luckyInfo)
+
+					luckyCompilationTime.innerHTML = "<b style=color:green>" + luckyInfo.Date + "</b>"
+					luckyVersion.innerHTML = "<b style=color:green>" + luckyInfo.Version + "</b>"
+					luckyVersion.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+					luckyVersion.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="获取最新版本" onclick="return OpenGithub()"/>'
+
+					adminHttpURL = "http://" + window.location.hostname + ":" + info.LuckyBaseConfigure.AdminWebListenPort
+					if (info.LuckyBaseConfigure.SafeURL != undefined) {
+						adminHttpURL += info.LuckyBaseConfigure.SafeURL
+					}
+
+
+
+
+
+
+
+
+					luckyLoginInfo.innerHTML =
+						"<b style=color:green>默认账号密码:666" + "</b>"
+					luckyLoginInfo.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+					luckyLoginInfo.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="重置" onclick="return ResetAuthInfo(this)"/>'
+
+
+					luckyHttpPort.innerHTML = '<input disabled id="_luckyHttpPortInput" type="text" class="cbi-input-text"data-type="uinteger" style="width:30%" value="' + info.LuckyBaseConfigure.AdminWebListenPort + '"/>'
+					luckyHttpPort.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+					luckyHttpPort.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="修改" onclick="return SetNewHttpPort(this)"/>'
+
+					luckySafeURL.innerHTML = '<input disabled id="_luckySafeURLInput" type="text" class="cbi-input-text"data-type="uinteger" style="width:30%" value="' + info.LuckyBaseConfigure.SafeURL + '"/>'
+					luckySafeURL.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+					luckySafeURL.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="修改" onclick="return SetNewSafeURL(this)"/>'
+
+					if (info.LuckyBaseConfigure.AllowInternetaccess) {
+						luckyAllowInternetaccess.innerHTML = '<b style=color:green>已允许</b>'
+						luckyAllowInternetaccess.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+						luckyAllowInternetaccess.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="关闭" onclick="return SwitchAllowInternetaccess(false)"/>'
+					} else {
+						luckyAllowInternetaccess.innerHTML = '<b style=color:red>未允许</b>'
+						luckyAllowInternetaccess.innerHTML += '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'
+						luckyAllowInternetaccess.innerHTML += '<input type="button" class="btn cbi-button cbi-button-reload" value="开启" onclick="return SwitchAllowInternetaccess(true)"/>'
+					}
+				}
+			}
+		);
+	}
+
+	function SwitchAllowInternetaccess(b) {
+		console.log("切换:" + b)
+
+		if (b) {
+			if (confirm("确定开启外网访问吗？")) {
+				SetLuckyConfig("switch_Internetaccess", "true")
+			}
+
+			return
+		}
+
+		if (confirm("确定关闭外网访问吗？")) {
+			SetLuckyConfig("switch_Internetaccess", "false")
+		}
+
+
+	}
+
+	var luckyPreState = false
+	function MotitorLuckyState() {
+		XHR.poll(3, '<%=url([[admin]], [[services]], [[lucky_status]])%>', null,
+			function (x, data) {
+				if (data) {
+					if (luckyPreState != data.running) {
+						FlushLuckyInfo()
+						console.log("服务状态发生变化")
+					}
+
+					luckyPreState = data.running
+					flushLuckyStatus(data.running)
+				}
+			}
+		);
+	}
+
+	function OpenAdminURL(btn, url) {
+		winOpen(url)
+
+
+	}
+
+	function SetNewHttpPort(btn) {
+		var luckyHttpPortInput = document.getElementById('_luckyHttpPortInput')
+		console.log(luckyHttpPortInput.value)
+
+		var newPort = prompt("请输入新的端口号");
+		if (newPort == null) {
+			return
+		}
+
+		if (luckyHttpPortInput.value == newPort) {
+			return
+		}
+
+		if (!isNumber(newPort)) {
+			alert("端口号格式错误，必须是 1-65535");
+			return
+		}
+
+		var newPortValue = parseInt(newPort)
+		if (newPortValue <= 0 || newPortValue > 65535) {
+			alert("端口号格式错误，必须是 1-65535");
+			return
+		}
+		console.log("新端口:" + newPortValue)
+		SetLuckyConfig("admin_http_port", newPort)
+	}
+
+	function SetNewSafeURL(btn) {
+		var luckySafeURLInput = document.getElementById('_luckySafeURLInput')
+		console.log("fuckURL:" + luckySafeURLInput.value)
+
+		var newSafeURL = prompt("请输入新的端口号");
+		if (newSafeURL == null) {
+			return
+		}
+
+		if (newSafeURL == luckySafeURLInput.value) {
+			return
+		}
+
+
+		SetLuckyConfig("admin_safe_url", newSafeURL)
+	}
+
+	function ResetAuthInfo(btn) {
+		if (confirm("确定把管理员账号和密码重置为 666 吗？")) {
+			SetLuckyConfig("reset_auth_info", "")
+		}
+
+
+	}
+	function SetLuckyConfig(key, value) {
+		XHR.get('<%=url([[admin]], [[services]], [[lucky_set_config]])%>', { key: key, value: value },
+			function (x, res) {
+				if (res) {
+					//console.log(res)
+					if (res.ret != undefined && res.ret == 0) {
+						FlushLuckyInfo()
+						alert("修改成功")
+						ControllLuckyService("restart")
+						setTimeout('document.location.reload()',2000)
+					} else {
+						alert("修改失败")
+					}
+				}
+			});
+	}
+
+	function ControllLuckyService(action) {
+		console.log("ControllLuckyService:" + action)
+		XHR.get('<%=url([[admin]], [[services]], [[lucky_service]])%>', { action: action },
+			function (x) {
+
+			});
+	}
+
+
+	function StopService() {
+		if (confirm("确定停止 Lucky 服务吗？")) {
+			ControllLuckyService("stop")
+		}
+
+	}
+
+	function StartService() {
+		if (confirm("确定启动 Lucky 服务吗？")) {
+			ControllLuckyService("start")
+		}
+
+	}
+
+	function OpenGithub() {
+		winOpen("https://url21.ctfile.com/d/44547821-55537427-a5525e?p=16601")
+	}
+
+	function winOpen(url) {
+		var winOpen = window.open(url);
+		if (winOpen == null || typeof (winOpen) == 'undefined') {
+			window.location.href = url;
+		}
+	};
+
+
+	function isNumber(val) {
+		// negative or positive
+		return /^[-]?[\.\d]+$/.test(val);
+	}
+
+
+</script>

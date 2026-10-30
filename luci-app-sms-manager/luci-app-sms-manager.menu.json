@@ -1,0 +1,13 @@
+{
+	"admin/services/sms-manager": {
+		"title": "4G 短信管理",
+		"order": 45,
+		"action": {
+			"type": "view",
+			"path": "sms/manager"
+		},
+		"depends": {
+			"acl": [ "luci-app-sms-manager" ]
+		}
+	}
+}

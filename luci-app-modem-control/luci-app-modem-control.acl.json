@@ -1,0 +1,19 @@
+{
+	"luci-app-modem-control": {
+		"description": "Grant access to 4G Modem power control",
+		"read": {
+			"file": {
+				"/etc/init.d/modem_power status_json": [ "exec" ]
+			},
+			"uci": [ "modem" ]
+		},
+		"write": {
+			"file": {
+				"/etc/init.d/modem_power power_on": [ "exec" ],
+				"/etc/init.d/modem_power power_off": [ "exec" ],
+				"/etc/init.d/modem_power restart": [ "exec" ]
+			},
+			"uci": [ "modem" ]
+		}
+	}
+}

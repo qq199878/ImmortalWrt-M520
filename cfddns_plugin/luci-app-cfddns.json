@@ -1,0 +1,58 @@
+{
+	"luci-app-cfddns": {
+		"description": "Cloudflare DDNS - 公网出口 IPv4 同步到 A 记录",
+		"read": {
+			"ubus": {
+				"luci.cfddns": [
+					"status_quick",
+					"status",
+					"probe",
+					"run_now",
+					"set_interval",
+					"set_enabled",
+					"set_park_ip",
+					"get_config",
+					"save_token",
+					"save_config",
+					"list_zones",
+					"list_records",
+					"add_record",
+					"del_record",
+					"set_target"
+				]
+			},
+			"file": {
+				"/etc/cfddns.conf": [ "read" ],
+				"/tmp/cfddns.last": [ "read" ],
+				"/tmp/cfddns.log": [ "read" ],
+				"/etc/crontabs/root": [ "read" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"luci.cfddns": [
+					"status_quick",
+					"status",
+					"probe",
+					"run_now",
+					"set_interval",
+					"set_enabled",
+					"set_park_ip",
+					"get_config",
+					"save_token",
+					"save_config",
+					"list_zones",
+					"list_records",
+					"add_record",
+					"del_record",
+					"set_target"
+				]
+			},
+			"file": {
+				"/etc/ddns-cf.sh": [ "exec" ],
+				"/etc/cfddns.conf": [ "read", "write" ],
+				"/etc/crontabs/root": [ "write" ]
+			}
+		}
+	}
+}

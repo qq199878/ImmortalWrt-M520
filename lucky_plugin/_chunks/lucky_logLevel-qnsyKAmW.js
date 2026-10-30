@@ -1,0 +1,1 @@
+const r=new Set(["off","trace","debug","info","warn","error","fatal","panic","unknown"]);function o(e){const n=String(e||"").trim().toLowerCase();return n?r.has(n)?n:"unknown":""}function t(e){const n=o(e);return n?n.toUpperCase():""}function a(e){const n=o(e);return n?`log-level--${n}`:""}export{t as a,a as l,o as n};

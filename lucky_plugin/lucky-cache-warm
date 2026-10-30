@@ -1,0 +1,18 @@
+#!/bin/sh /etc/rc.common
+# 开机预热 Lucky 信息缓存
+# 避免重启后首次打开页面等待 7 秒
+
+START=95
+STOP=05
+
+start() {
+	(
+		sleep 20
+		/usr/bin/lucky-info-cache.sh >/dev/null 2>&1
+		logger -t lucky-cache "开机预热完成"
+	) &
+}
+
+stop() {
+	:
+}

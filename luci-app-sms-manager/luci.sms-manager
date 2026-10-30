@@ -1,0 +1,58 @@
+#!/bin/sh
+# rpcd 插件：4G 短信管理
+# 通过 rpcd 将短信操作暴露为 ubus 方法，供 LuCI 前端调用
+#
+# rpcd 调用约定：
+#   <script> list          -> 输出方法列表 JSON
+#   <script> call <method> -> 从 stdin 读取参数，输出结果 JSON
+
+LUA_LIB_DIR="/usr/lib/lua/modem_sms"
+CORE="/usr/lib/lua/modem_sms/sms_rpcd.lua"
+
+json_escape() {
+	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+case "$1" in
+"list")
+	cat <<'EOF'
+{
+	"status": {},
+	"probe": {},
+	"list": { "filter": "str", "limit": "int" },
+	"read": { "index": "int" },
+	"delete": { "index": "int" },
+	"delete_all": {},
+	"delete_batch": { "indexes": "str" },
+	"send": { "number": "str", "text": "str" },
+	"get_config": {},
+	"set_config": { "port": "str", "storage": "str", "charset": "str", "mode": "str" }
+}
+EOF
+	exit 0
+	;;
+
+"call")
+	METHOD="$2"
+	# 从 stdin 读取 JSON 参数（可能为空）
+	INPUT="$(cat 2>/dev/null)"
+
+	if [ ! -f "$CORE" ]; then
+		printf '{"ok":false,"error":"core library missing"}\n'
+		exit 1
+	fi
+
+	# 调用 Lua 后端，透传方法与参数
+	if [ -n "$INPUT" ]; then
+		LUA_PATH="$LUA_LIB_DIR/?.lua;;" lua "$CORE" "$METHOD" "$INPUT" 2>/dev/null
+	else
+		LUA_PATH="$LUA_LIB_DIR/?.lua;;" lua "$CORE" "$METHOD" 2>/dev/null
+	fi
+	exit 0
+	;;
+
+*)
+	printf '{"ok":false,"error":"usage: %s list|call <method>"}\n' "$0"
+	exit 1
+	;;
+esac

@@ -1,0 +1,13 @@
+{
+	"admin/services/cfddns": {
+		"title": "Cloudflare 动态域名",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "cfddns"
+		},
+		"depends": {
+			"acl": [ "luci-app-cfddns" ]
+		}
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"admin/network/nss": {
+		"title": "NSS 硬件加速",
+		"action": {
+			"type": "view",
+			"path": "nss/status"
+		},
+		"depends": {
+			"acl": [ "luci-app-nss-status" ]
+		}
+	}
+}

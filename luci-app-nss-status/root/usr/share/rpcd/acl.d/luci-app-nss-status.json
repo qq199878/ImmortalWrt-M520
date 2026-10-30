@@ -1,0 +1,10 @@
+{
+	"luci-app-nss-status": {
+		"description": "Grant access to NSS status",
+		"read": {
+			"ubus": {
+				"luci.nss": [ "getStats" ]
+			}
+		}
+	}
+}

@@ -1,0 +1,1 @@
+const t=256;function e(E){const _=Number(E);return Number.isFinite(_)?Math.min(102400,Math.max(256,Math.trunc(_))):256}function n(E){return E.trim().startsWith("webservice_rule:")?256:1}export{t as W,n as l,e as n};

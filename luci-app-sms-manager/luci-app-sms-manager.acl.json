@@ -1,0 +1,29 @@
+{
+	"luci-app-sms-manager": {
+		"description": "Grant access to 4G SMS management",
+		"read": {
+			"ubus": {
+				"luci.sms-manager": [
+					"status",
+					"probe",
+					"list",
+					"read",
+					"get_config"
+				]
+			},
+			"uci": [ "sms_manager" ]
+		},
+		"write": {
+			"ubus": {
+				"luci.sms-manager": [
+					"delete",
+					"delete_all",
+					"delete_batch",
+					"send",
+					"set_config"
+				]
+			},
+			"uci": [ "sms_manager" ]
+		}
+	}
+}

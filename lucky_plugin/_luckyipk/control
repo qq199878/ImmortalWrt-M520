@@ -1,0 +1,12 @@
+Package: luci-app-lucky
+Version: 2.2.2-r1
+Depends: libc, lucky, luci-compat, luci-lua-runtime
+Source: feeds/base/lucky/luci-app-lucky
+SourceName: luci-app-lucky
+Section: luci
+SourceDateEpoch: 1741754005
+URL: https://github.com/openwrt/luci
+Maintainer: OpenWrt LuCI community
+Architecture: all
+Installed-Size: 40960
+Description:  LuCI Support for  lucky 
