@@ -199,6 +199,61 @@ function mask_token(tk) {
 	return substr(tk, 0, 8) + '…' + substr(tk, n - 4, 4);
 }
 
+// ---------------------------------------------------------------------
+// 多 Token 管理
+// CF_TOKEN  = 当前生效的 token（ddns-cf.sh 直接 source 用，必须保持单值）
+// CF_TOKENS = 所有 token 列表（逗号分隔）
+// ---------------------------------------------------------------------
+function tok_list(cfg) {
+	let out = [];
+	let raw = trim(cfg.CF_TOKENS || '');
+	if (length(raw) > 0) {
+		let parts = split(raw, ',');
+		for (let i = 0; i < length(parts); i++) {
+			let t = trim(parts[i]);
+			if (length(t) > 0)
+				push(out, t);
+		}
+	}
+	return out;
+}
+function tok_has(list, tk) {
+	for (let i = 0; i < length(list); i++) {
+		if (list[i] == tk)
+			return true;
+	}
+	return false;
+}
+function tok_save(list, cur) {
+	let patch = { CF_TOKENS: join(',', list) };
+	// cur 为空表示列表已清空，显式写空值
+	patch.CF_TOKEN = (cur || '');
+	let ok = save_conf(patch);
+	if (ok) {
+		cache_del(CACHE_CF);
+		cache_del(CACHE_ZONES);
+	}
+	return ok;
+}
+// 返回脱敏后的列表 + 当前选中索引
+function tok_view(cfg) {
+	let list = tok_list(cfg);
+	let cur = trim(cfg.CF_TOKEN || '');
+	let items = [];
+	let sel = -1;
+	for (let i = 0; i < length(list); i++) {
+		let isCur = (list[i] == cur);
+		if (isCur)
+			sel = i;
+		push(items, {
+			idx:    i,
+			mask:   mask_token(list[i]),
+			active: isCur
+		});
+	}
+	return { items: items, selected: sel, count: length(list) };
+}
+
 // 主机名 → 完整域名
 function to_fqdn(name, zone) {
 	name = trim(name || '');
@@ -275,6 +330,39 @@ function cf_call(method, path, body) {
 		return { ok: false, err: msg, err_code: code };
 	}
 
+	return { ok: true, data: r.result };
+}
+// 用指定 Token 调 CF API（不读配置，用于保存前校验）
+function cf_call_tk(tk, method, path) {
+	if (length(tk) == 0)
+		return { ok: false, err: 'Token 为空' };
+	if (!match(tk, /^[A-Za-z0-9_-]+$/))
+		return { ok: false, err: 'Token 含非法字符' };
+	let cmd = 'curl -s --max-time 15 -X ' + method + ' "' + CF_API + path + '"' +
+	          ' -H "Authorization: Bearer ' + tk + '"' +
+	          ' -H "Content-Type: application/json"';
+	let raw = sh(cmd);
+	if (length(raw) == 0)
+		return { ok: false, err: 'Cloudflare 无响应（网络不通或 Token 无效）' };
+	let r = null;
+	try {
+		r = json(raw);
+	} catch (e) {
+		return { ok: false, err: 'Cloudflare 响应解析失败' };
+	}
+	if (r == null)
+		return { ok: false, err: 'Cloudflare 响应解析失败' };
+	if (!r.success) {
+		let msg = 'Token 无效';
+		let code = 0;
+		if (r.errors != null && length(r.errors) > 0) {
+			if (r.errors[0].message != null)
+				msg = r.errors[0].message;
+			if (r.errors[0].code != null)
+				code = r.errors[0].code;
+		}
+		return { ok: false, err: msg, err_code: code };
+	}
 	return { ok: true, data: r.result };
 }
 
@@ -764,9 +852,13 @@ const methods = {
 	get_config: {
 		call: function(request) {
 			let cfg = load_conf();
+			let tv = tok_view(cfg);
 			return {
 				has_token:   length(cfg.CF_TOKEN || '') > 0,
 				token_mask:  mask_token(cfg.CF_TOKEN || ''),
+				tokens:      tv.items,
+				token_count: tv.count,
+				token_sel:   tv.selected,
 				zone_id:     cfg.ZONE_ID || '',
 				domain:      cfg.DOMAIN || '',
 				record_type: cfg.RECORD_TYPE || 'A',
@@ -779,6 +871,24 @@ const methods = {
 	},
 
 	// 只保存 Token
+	// 保存前校验 Token 有效性：只探测，不写配置
+	verify_token: {
+		args: { token: '' },
+		call: function(request) {
+			let tk = trim((request.args && request.args.token) || '');
+			if (length(tk) == 0)
+				return { ok: false, err: 'Token 不能为空' };
+			if (length(tk) < 20)
+				return { ok: false, err: 'Token 长度异常（' + length(tk) + ' 字符），请检查是否完整复制' };
+			if (!match(tk, /^[A-Za-z0-9_-]+$/))
+				return { ok: false, err: 'Token 含非法字符（只允许字母、数字、- 和 _），请重新复制' };
+			let r = cf_call_tk(tk, 'GET', '/zones?per_page=1&page=1');
+			if (!r.ok)
+				return { ok: false, err: r.err, err_code: r.err_code || 0 };
+			let n = length(r.data || []);
+			return { ok: true, zone_count: n };
+		}
+	},
 	save_token: {
 		args: { token: '' },
 		call: function(request) {
@@ -793,15 +903,103 @@ const methods = {
 			if (!match(tk, /^[A-Za-z0-9_-]+$/))
 				return { ok: false, err: 'Token 含非法字符（只允许字母、数字、- 和 _），请重新复制' };
 
-			let ok = save_conf({ CF_TOKEN: tk });
-			// 换 Token 后旧缓存全部作废
-			cache_del(CACHE_CF);
-			cache_del(CACHE_ZONES);
+			// 同时把新 Token 并入列表（若不存在）
+			let cfg = load_conf();
+			let list = tok_list(cfg);
+			if (!tok_has(list, tk))
+				push(list, tk);
+			let ok = tok_save(list, tk);
 			return { ok: ok, err: ok ? '' : '写入 /etc/cfddns.conf 失败' };
 		}
 	},
 
-	// 保存其它配置项（不含 token）
+	// 列出所有 Token（脱敏）
+	list_tokens: {
+		call: function(request) {
+			let cfg = load_conf();
+			let tv = tok_view(cfg);
+			return { ok: true, tokens: tv.items, selected: tv.selected, count: tv.count };
+		}
+	},
+	// 新增 Token（已存在则拒绝）
+	add_token: {
+		args: { token: '' },
+		call: function(request) {
+			if (!is_enabled())
+				return { ok: false, err: '插件已关闭，请先启用', disabled: true };
+			let tk = trim((request.args && request.args.token) || '');
+			if (length(tk) == 0)
+				return { ok: false, err: 'Token 不能为空' };
+			if (length(tk) < 20)
+				return { ok: false, err: 'Token 长度异常（' + length(tk) + ' 字符），请检查是否完整复制' };
+			if (!match(tk, /^[A-Za-z0-9_-]+$/))
+				return { ok: false, err: 'Token 含非法字符（只允许字母、数字、- 和 _）' };
+			let cfg = load_conf();
+			let list = tok_list(cfg);
+			if (tok_has(list, tk))
+				return { ok: false, err: '该 Token 已存在，无需重复添加' };
+			push(list, tk);
+			// 若当前没有生效 token，新增的自动生效
+			let cur = trim(cfg.CF_TOKEN || '');
+			if (length(cur) == 0)
+				cur = tk;
+			let ok = tok_save(list, cur);
+			return { ok: ok, err: ok ? '' : '写入配置失败', activated: (cur == tk) };
+		}
+	},
+	// 删除 Token（当前生效的不允许删）
+	del_token: {
+		args: { idx: -1 },
+		call: function(request) {
+			if (!is_enabled())
+				return { ok: false, err: '插件已关闭，请先启用', disabled: true };
+			let a = request.args || {};
+			if (type(a.idx) != 'int')
+				return { ok: false, err: '缺少 Token 索引' };
+			let i = int(a.idx);
+			let cfg = load_conf();
+			let cur = trim(cfg.CF_TOKEN || '');
+			let list = tok_list(cfg);
+			if (i < 0 || i >= length(list))
+				return { ok: false, err: 'Token 索引超出范围，请刷新后重试' };
+			let tk = list[i];
+			let next = [];
+			for (let j = 0; j < length(list); j++) {
+				if (j != i)
+					push(next, list[j]);
+			}
+			let wasCur = (tk == cur);
+			if (wasCur)
+				cur = (length(next) > 0) ? next[0] : '';
+			let ok = tok_save(next, cur);
+			return {
+				ok: ok,
+				err: ok ? '' : '写入配置失败',
+				remain: length(next),
+				was_current: wasCur,
+				new_current: (wasCur && length(next) > 0) ? mask_token(cur) : ''
+			};
+		}
+	},
+	// 切换当前生效 Token
+	select_token: {
+		args: { idx: -1 },
+		call: function(request) {
+			if (!is_enabled())
+				return { ok: false, err: '插件已关闭，请先启用', disabled: true };
+			let a = request.args || {};
+			if (type(a.idx) != 'int')
+				return { ok: false, err: '缺少 Token 索引' };
+			let i = int(a.idx);
+			let cfg = load_conf();
+			let list = tok_list(cfg);
+			if (i < 0 || i >= length(list))
+				return { ok: false, err: 'Token 索引超出范围，请刷新后重试' };
+			let tk = list[i];
+			let ok = tok_save(list, tk);
+			return { ok: ok, err: ok ? '' : '写入配置失败', active_mask: mask_token(tk) };
+		}
+	},
 	save_config: {
 		args: { zone_id: '', domain: '', record_type: '', ttl: 0, proxied: false, iface: '', sources: '' },
 		call: function(request) {
@@ -1010,6 +1208,101 @@ const methods = {
 			cache_del(CACHE_CF);
 			cache_del(CACHE_ZONES);
 			return { ok: true, is_target: is_target, domain: cfg.DOMAIN || '' };
+		}
+	},
+	// 编辑（更新）已有解析记录
+	update_record: {
+		args: { zone_id: '', zone_name: '', rec_id: '', type: 'A', name: '', content: '', ttl: 120, proxied: false },
+		call: function(request) {
+			if (!is_enabled())
+				return { ok: false, err: '插件已关闭，请先启用', disabled: true };
+			let a = request.args || {};
+			let zid   = trim(a.zone_id || '');
+			let zname = trim(a.zone_name || '');
+			let rid   = trim(a.rec_id || '');
+			let type  = trim(a.type || 'A');
+			let name  = trim(a.name || '');
+			let content = trim(a.content || '');
+			if (!match(zid, /^[0-9a-fA-F]{32}$/))
+				return { ok: false, err: '缺少域名（Zone）参数' };
+			if (!match(rid, /^[0-9a-fA-F]{32}$/))
+				return { ok: false, err: '缺少记录 ID' };
+			if (length(name) == 0)
+				return { ok: false, err: '请填写主机名（可填 @ 表示根域名）' };
+			if (length(content) == 0)
+				return { ok: false, err: '请填写记录内容' };
+			// 类型白名单
+			if (type != 'A' && type != 'AAAA' && type != 'CNAME' && type != 'TXT')
+				return { ok: false, err: '不支持的记录类型：' + type };
+			// 内容格式校验（与 add_record 保持一致）
+			if (type == 'A') {
+				if (!match(content, /^([0-9]{1,3}\.){3}[0-9]{1,3}$/))
+					return { ok: false, err: 'A 记录内容必须是 IPv4 地址' };
+				let parts = split(content, '.');
+				for (let i = 0; i < length(parts); i++) {
+					if (int(parts[i]) > 255)
+						return { ok: false, err: 'IPv4 每段不能超过 255' };
+				}
+			}
+			else if (type == 'AAAA') {
+				if (!match(content, /^[0-9a-fA-F:]+$/))
+					return { ok: false, err: 'AAAA 记录内容必须是 IPv6 地址' };
+				if (index(content, ':') < 0)
+					return { ok: false, err: 'AAAA 记录内容必须是 IPv6 地址' };
+				if (index(content, ':::') > -1)
+					return { ok: false, err: 'IPv6 地址格式错误（出现 :::）' };
+			}
+			let ttl = int(a.ttl) || 120;
+			if (ttl != 1 && (ttl < 60 || ttl > 86400))
+				ttl = 120;
+			// 只有 A/AAAA/CNAME 支持橙云
+			let px = a.proxied ? true : false;
+			if (type != 'A' && type != 'AAAA' && type != 'CNAME')
+				px = false;
+
+			let fq = to_fqdn(name, zname);
+			let body = sprintf(
+				'{\"type\":\"%s\",\"name\":\"%s\",\"content\":\"%s\",\"ttl\":%d,\"proxied\":%s}',
+				type, fq, content, ttl, (px ? 'true' : 'false'));
+			let r = cf_call('PUT', '/zones/' + zid + '/dns_records/' + rid, body);
+			if (!r.ok)
+				return { ok: false, err: r.err, err_code: r.err_code || 0 };
+
+			// 若改的正是当前 DDNS 维护目标，同步更新本地配置，避免定时任务把旧值写回
+			let cfg = load_conf();
+			let target_updated = false;
+			let old_domain = cfg.DOMAIN || '';
+			let old_type   = cfg.RECORD_TYPE || 'A';
+			if (length(old_domain) > 0 && old_domain == fq && old_type == type) {
+				// 同一记录：直接把新值写回
+				target_updated = save_conf({
+					DOMAIN:  fq,
+					TTL:     sprintf('%d', ttl),
+					PROXIED: px ? 'true' : 'false'
+				});
+			} else {
+				// 可能改名了：用 CF 侧状态比对 rec_id 更可靠
+				let c = get_cf_state(false);
+				if (c.ok && c.rec_id == rid) {
+					target_updated = save_conf({
+						DOMAIN:      fq,
+						RECORD_TYPE: type,
+						TTL:         sprintf('%d', ttl),
+						PROXIED:     px ? 'true' : 'false'
+					});
+				}
+			}
+			cache_del(CACHE_CF);
+			cache_del(CACHE_ZONES);
+			return {
+				ok: true,
+				id: rid,
+				name: fq,
+				type: type,
+				ttl: ttl,
+				proxied: px,
+				target_updated: target_updated
+			};
 		}
 	},
 

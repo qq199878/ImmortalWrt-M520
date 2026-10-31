@@ -18,7 +18,13 @@
 					"list_records",
 					"add_record",
 					"del_record",
-					"set_target"
+					"set_target",
+					"verify_token",
+					"list_tokens",
+					"add_token",
+					"del_token",
+					"select_token",
+					"update_record"
 				]
 			},
 			"file": {
@@ -45,7 +51,13 @@
 					"list_records",
 					"add_record",
 					"del_record",
-					"set_target"
+					"set_target",
+					"verify_token",
+					"list_tokens",
+					"add_token",
+					"del_token",
+					"select_token",
+					"update_record"
 				]
 			},
 			"file": {

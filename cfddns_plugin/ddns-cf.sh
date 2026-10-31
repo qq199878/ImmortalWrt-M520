@@ -2,7 +2,7 @@
 # =====================================================================
 # Cloudflare DDNS 更新脚本 —— A 记录（公网出口 IPv4）
 #
-# 背景：本机 PPPoE 拿到的是运营商 NAT 内网地址（172.16.1.11），
+# 背景：本机 PPPoE 拿到的是运营商 NAT 内网地址（RFC1918 私有地址），
 #       本地任何接口都查不到真实公网出口，必须访问外部服务探测。
 #
 # 用法：
@@ -103,11 +103,17 @@ probe_one() {
 # 注意：不能用 $(detect_public_ip) 捕获，那样函数在子 shell 里跑，
 #       设置的全局变量传不回来。改为设置 DETECTED_IP / PROBE_SRC / PROBE_AGREE。
 # 返回：0 成功（IP 在 DETECTED_IP），1 失败
+#
+# 时间预算：rpcd 以 -t 30 运行，网页点「立即同步」时整个脚本必须在 30s 内收尾，
+#           否则 rpcd 会被占满一个超时周期。这里给探测阶段设总预算，
+#           预算耗尽就不再尝试后续源（已有可用 IP 则直接采用）。
+PROBE_BUDGET=${PROBE_BUDGET:-12}
 detect_public_ip() {
 	_first=''
 	_first_src=''
 	_agree=0
 	_tried=0
+	_deadline=$(( $(date +%s) + PROBE_BUDGET ))
 
 	_saved_ifs="$IFS"
 	IFS=','
@@ -115,6 +121,13 @@ detect_public_ip() {
 		IFS="$_saved_ifs"
 		_u=$(echo "$_u" | tr -d ' \t\r\n')
 		[ -z "$_u" ] && continue
+		# 预算耗尽：已有结果就直接用，没有则继续尝试（但最多再做一次）
+		if [ "$(date +%s)" -ge "$_deadline" ]; then
+			if [ -n "$_first" ]; then
+				log "probe budget ${PROBE_BUDGET}s used up, use $_first (agree=$_agree)"
+				break
+			fi
+		fi
 		_tried=$((_tried + 1))
 
 		_ip=$(probe_one "$_u")
